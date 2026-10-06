@@ -1,4 +1,4 @@
-# cpp-hpc-primitives
+# hpc-primitives
 
 Low-latency C++20 building blocks: lock-free queues, allocators, and
 cache-conscious containers, with tests run under ASan, UBSan and TSan, and
@@ -63,7 +63,7 @@ ctest --test-dir build --output-on-failure
 | `HPC_ENABLE_NUMA` | ON | builds `numa_arena` when libnuma is found |
 | `HPC_BENCH_NATIVE` | ON | `-march=native` for benchmarks |
 
-As a dependency: `add_subdirectory(cpp-hpc-primitives)` and link
+As a dependency: `add_subdirectory(hpc-primitives)` and link
 `hpc::primitives`.
 
 ## Example
