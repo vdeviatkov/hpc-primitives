@@ -1,85 +1,77 @@
 #!/usr/bin/env python3
-import mmap
+"""Consumes messages from the C++ shm_publisher example (standard library only).
+
+Layout matches hpc::ipc::shm_queue_header (include/hpc/ipc/shm_spsc_queue.hpp).
+
+Caveat: CPython gives no memory-ordering guarantees, so the acquire/release
+pairing of the C++ side is approximated by aligned 8-byte loads and stores,
+which are atomic on x86-64 and AArch64. Fine for a demo; a production
+consumer should do the index updates in native code.
+"""
 import signal
 import struct
 import sys
 import time
+from multiprocessing import shared_memory
 
-import posix_ipc  # pip install posix_ipc
-
-SHM_NAME = "/hpc_shm_spsc_ring"
-
-# Keep in sync with the C++ Message struct
-MESSAGE_STRUCT = struct.Struct("<QQ48s")  # seq (u64), ts (u64), payload[48]
-MESSAGE_SIZE = MESSAGE_STRUCT.size
-
-# Header layout: capacity (u64), head (u64), tail (u64)
-HEADER_STRUCT = struct.Struct("<QQQ")
-HEADER_SIZE = HEADER_STRUCT.size
-
-stop = False
+NAME = "hpc_demo_queue"  # Python prepends the leading "/"
+MAGIC = struct.unpack("<Q", b"HPCSPSQ1")[0]
+U64 = struct.Struct("<Q")
+TAIL_OFFSET, HEAD_OFFSET, SLOTS_OFFSET = 128, 256, 384
+MESSAGE = struct.Struct("<QQ48s")  # seq, timestamp_ns, payload[48]
 
 
-def handle_signal(signum, frame):
-    global stop
-    stop = True
-
-
-for sig in (signal.SIGINT, signal.SIGTERM):
-    signal.signal(sig, handle_signal)
+def attach(name: str) -> shared_memory.SharedMemory:
+    try:
+        return shared_memory.SharedMemory(name=name, track=False)  # Python >= 3.13
+    except TypeError:
+        shm = shared_memory.SharedMemory(name=name)
+        # Older versions register attached segments for cleanup and would
+        # unlink the publisher's segment on exit.
+        from multiprocessing import resource_tracker
+        resource_tracker.unregister(shm._name, "shared_memory")  # noqa: SLF001
+        return shm
 
 
 def main() -> int:
     try:
-        shm = posix_ipc.SharedMemory(SHM_NAME, flags=0)  # open existing
-    except posix_ipc.ExistentialError:
-        print(f"Shared memory object {SHM_NAME} not found (is the publisher running?).")
+        shm = attach(NAME)
+    except FileNotFoundError:
+        print(f"/{NAME} not found; start ./build/shm_publisher first")
         return 1
 
-    # First, map just the header to read capacity.
-    mm_header = mmap.mmap(shm.fd, HEADER_SIZE, access=mmap.ACCESS_READ)
-    raw_header = mm_header[:HEADER_SIZE]
-    capacity, head_idx, tail_idx = HEADER_STRUCT.unpack(raw_header)
-    mm_header.close()
+    buf = shm.buf
+    magic, capacity, slot_size = struct.unpack_from("<QQQ", buf, 0)
+    if magic != MAGIC or slot_size != MESSAGE.size:
+        print("incompatible queue layout")
+        return 1
 
-    total_size = HEADER_SIZE + capacity * MESSAGE_SIZE
+    stop = False
 
-    # Remap the full region now that we know the capacity/size.
-    mm = mmap.mmap(shm.fd, total_size, access=mmap.ACCESS_READ)
-    shm.close_fd()
+    def on_signal(*_):
+        nonlocal stop
+        stop = True
 
-    max_messages = 20
-    count = 0
+    signal.signal(signal.SIGINT, on_signal)
 
-    try:
-        while not stop and count < max_messages:
-            # Reload header each iteration to see updated head/tail.
-            raw_header = mm[0:HEADER_SIZE]
-            capacity, head_idx, tail_idx = HEADER_STRUCT.unpack(raw_header)
+    head = U64.unpack_from(buf, HEAD_OFFSET)[0]
+    while not stop:
+        tail = U64.unpack_from(buf, TAIL_OFFSET)[0]
+        if head == tail:
+            time.sleep(0.001)
+            continue
+        while head != tail:
+            offset = SLOTS_OFFSET + (head & (capacity - 1)) * MESSAGE.size
+            seq, ts_ns, _payload = MESSAGE.unpack_from(buf, offset)
+            head += 1
+            U64.pack_into(buf, HEAD_OFFSET, head)
+            latency_us = (time.time_ns() - ts_ns) / 1e3
+            print(f"seq={seq} latency={latency_us:.0f}us")
 
-            if head_idx == tail_idx:
-                # Queue is empty; sleep briefly and retry.
-                time.sleep(0.001)
-                continue
-
-            idx = head_idx % capacity
-            offset = HEADER_SIZE + idx * MESSAGE_SIZE
-            raw = mm[offset : offset + MESSAGE_SIZE]
-            if len(raw) != MESSAGE_SIZE:
-                time.sleep(0.001)
-                continue
-
-            seq, ts_ns, payload = MESSAGE_STRUCT.unpack(raw)
-
-            print(f"seq={seq} ts={ts_ns} payload[0:4]={payload[:4].hex()} (head={head_idx} tail={tail_idx})")
-            count += 1
-            time.sleep(0.01)
-    finally:
-        mm.close()
-
+    del buf
+    shm.close()
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

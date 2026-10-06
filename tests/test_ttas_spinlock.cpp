@@ -1,22 +1,34 @@
+#include <hpc/concurrency/ttas_spinlock.hpp>
+
 #include <gtest/gtest.h>
 
-#include <hpc/core/ttas_spinlock.hpp>
-
-#include <atomic>
+#include <mutex>
 #include <thread>
 #include <vector>
 
-TEST(TtasSpinlock, ContendedIncrement)
-{
-    hpc::core::ttas_spinlock lock;
-    std::atomic<int> counter{0};
+using hpc::concurrency::ttas_spinlock;
 
-    constexpr int kThreads = 4;
-    constexpr int kIters = 1000;
+TEST(TtasSpinlock, TryLock)
+{
+    ttas_spinlock lock;
+    EXPECT_TRUE(lock.try_lock());
+    EXPECT_FALSE(lock.try_lock());
+    lock.unlock();
+    EXPECT_TRUE(lock.try_lock());
+    lock.unlock();
+}
+
+// A non-atomic counter only ends up exact if the lock provides mutual
+// exclusion and acquire/release ordering.
+TEST(TtasSpinlock, MutualExclusion)
+{
+    constexpr int kThreads = 8;
+    constexpr int kIters   = 100'000;
+
+    ttas_spinlock lock;
+    long counter = 0;
 
     std::vector<std::thread> threads;
-    threads.reserve(kThreads);
-
     for (int t = 0; t < kThreads; ++t) {
         threads.emplace_back([&] {
             for (int i = 0; i < kIters; ++i) {
@@ -25,11 +37,7 @@ TEST(TtasSpinlock, ContendedIncrement)
             }
         });
     }
+    for (auto& th : threads) th.join();
 
-    for (auto& th : threads) {
-        th.join();
-    }
-
-    EXPECT_EQ(counter.load(), kThreads * kIters);
+    EXPECT_EQ(counter, long{kThreads} * kIters);
 }
-

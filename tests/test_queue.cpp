@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <hpc/core/queue.hpp>
+#include <hpc/containers/queue.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -10,73 +10,81 @@
 // Construction
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, DefaultConstruct)
+TEST(HpcDynamicQueue, DefaultConstruct)
 {
-    hpc::core::fixed_queue<int, 16> q;
+    hpc::containers::queue<int> q;
     EXPECT_TRUE(q.empty());
-    EXPECT_FALSE(q.full());
     EXPECT_EQ(q.size(), 0u);
-    EXPECT_EQ(q.capacity(), 16u);
+    EXPECT_EQ(q.capacity(), 0u);
 }
 
-TEST(HpcFixedQueue, InitializerListConstruct)
+TEST(HpcDynamicQueue, ConstructWithCapacity)
 {
-    hpc::core::fixed_queue<int, 8> q{1, 2, 3};
+    hpc::containers::queue<int> q(100);
+    EXPECT_TRUE(q.empty());
+    EXPECT_GE(q.capacity(), 100u);
+}
+
+TEST(HpcDynamicQueue, InitializerListConstruct)
+{
+    hpc::containers::queue<int> q{1, 2, 3};
     EXPECT_EQ(q.size(), 3u);
     EXPECT_EQ(q.front(), 1);
     EXPECT_EQ(q.back(), 3);
 }
 
-TEST(HpcFixedQueue, InitializerListOverflow)
+TEST(HpcDynamicQueue, CopyConstruct)
 {
-    EXPECT_THROW(
-        (hpc::core::fixed_queue<int, 2>{1, 2, 3}),
-        std::overflow_error);
-}
-
-TEST(HpcFixedQueue, CopyConstruct)
-{
-    hpc::core::fixed_queue<int, 8> a{10, 20, 30};
-    hpc::core::fixed_queue<int, 8> b(a);
+    hpc::containers::queue<int> a{10, 20, 30};
+    hpc::containers::queue<int> b(a);
     EXPECT_EQ(a, b);
     a.pop();
     EXPECT_NE(a, b);
 }
 
-TEST(HpcFixedQueue, MoveConstruct)
+TEST(HpcDynamicQueue, MoveConstruct)
 {
-    hpc::core::fixed_queue<int, 8> a{10, 20, 30};
-    hpc::core::fixed_queue<int, 8> b(std::move(a));
+    hpc::containers::queue<int> a{10, 20, 30};
+    hpc::containers::queue<int> b(std::move(a));
     EXPECT_EQ(b.size(), 3u);
     EXPECT_EQ(b.front(), 10);
     EXPECT_TRUE(a.empty());
 }
 
-TEST(HpcFixedQueue, CopyAssign)
+TEST(HpcDynamicQueue, CopyAssign)
 {
-    hpc::core::fixed_queue<int, 8> a{1, 2, 3};
-    hpc::core::fixed_queue<int, 8> b;
+    hpc::containers::queue<int> a{1, 2, 3};
+    hpc::containers::queue<int> b;
     b = a;
     EXPECT_EQ(a, b);
 }
 
-TEST(HpcFixedQueue, MoveAssign)
+TEST(HpcDynamicQueue, MoveAssign)
 {
-    hpc::core::fixed_queue<int, 8> a{4, 5, 6};
-    hpc::core::fixed_queue<int, 8> b;
+    hpc::containers::queue<int> a{4, 5, 6};
+    hpc::containers::queue<int> b;
     b = std::move(a);
     EXPECT_EQ(b.size(), 3u);
     EXPECT_EQ(b.front(), 4);
     EXPECT_TRUE(a.empty());
 }
 
+TEST(HpcDynamicQueue, InitializerListAssign)
+{
+    hpc::containers::queue<int> q;
+    q = {7, 8, 9};
+    EXPECT_EQ(q.size(), 3u);
+    EXPECT_EQ(q.front(), 7);
+    EXPECT_EQ(q.back(), 9);
+}
+
 // ---------------------------------------------------------------------------
 // Push / Pop / Front / Back (FIFO ordering)
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, PushAndFrontBack)
+TEST(HpcDynamicQueue, PushAndFrontBack)
 {
-    hpc::core::fixed_queue<int, 8> q;
+    hpc::containers::queue<int> q;
     q.push(10);
     EXPECT_EQ(q.front(), 10);
     EXPECT_EQ(q.back(), 10);
@@ -89,9 +97,9 @@ TEST(HpcFixedQueue, PushAndFrontBack)
     EXPECT_EQ(q.size(), 3u);
 }
 
-TEST(HpcFixedQueue, PopOrder)
+TEST(HpcDynamicQueue, PopOrder)
 {
-    hpc::core::fixed_queue<int, 8> q;
+    hpc::containers::queue<int> q;
     q.push(1);
     q.push(2);
     q.push(3);
@@ -102,57 +110,27 @@ TEST(HpcFixedQueue, PopOrder)
     EXPECT_TRUE(q.empty());
 }
 
-TEST(HpcFixedQueue, TryPushOnFull)
+TEST(HpcDynamicQueue, PopIntoValue)
 {
-    hpc::core::fixed_queue<int, 2> q;
-    EXPECT_TRUE(q.try_push(1));
-    EXPECT_TRUE(q.try_push(2));
-    EXPECT_TRUE(q.full());
-    EXPECT_FALSE(q.try_push(3));
-    EXPECT_EQ(q.size(), 2u);
-}
-
-TEST(HpcFixedQueue, PushThrowsOnFull)
-{
-    hpc::core::fixed_queue<int, 2> q;
-    q.push(1);
-    q.push(2);
-    EXPECT_THROW(q.push(3), std::overflow_error);
-}
-
-TEST(HpcFixedQueue, TryPopOnEmpty)
-{
-    hpc::core::fixed_queue<int, 4> q;
-    EXPECT_FALSE(q.try_pop());
-}
-
-TEST(HpcFixedQueue, PopThrowsOnEmpty)
-{
-    hpc::core::fixed_queue<int, 4> q;
-    EXPECT_THROW(q.pop(), std::underflow_error);
-}
-
-TEST(HpcFixedQueue, TryPopIntoValue)
-{
-    hpc::core::fixed_queue<int, 4> q;
+    hpc::containers::queue<int> q;
     q.push(42);
     q.push(99);
 
     int v = 0;
-    EXPECT_TRUE(q.try_pop(v));
+    q.pop(v);
     EXPECT_EQ(v, 42);
-    EXPECT_TRUE(q.try_pop(v));
+    q.pop(v);
     EXPECT_EQ(v, 99);
-    EXPECT_FALSE(q.try_pop(v));
+    EXPECT_TRUE(q.empty());
 }
 
 // ---------------------------------------------------------------------------
 // Emplace
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, EmplaceWithPair)
+TEST(HpcDynamicQueue, EmplaceWithPair)
 {
-    hpc::core::fixed_queue<std::pair<int, std::string>, 4> q;
+    hpc::containers::queue<std::pair<int, std::string>> q;
     q.emplace(1, "one");
     q.emplace(2, "two");
     EXPECT_EQ(q.front().first, 1);
@@ -161,38 +139,55 @@ TEST(HpcFixedQueue, EmplaceWithPair)
     EXPECT_EQ(q.back().second, "two");
 }
 
-TEST(HpcFixedQueue, TryEmplace)
+// ---------------------------------------------------------------------------
+// Reserve / ShrinkToFit
+// ---------------------------------------------------------------------------
+
+TEST(HpcDynamicQueue, Reserve)
 {
-    hpc::core::fixed_queue<std::pair<int, int>, 2> q;
-    EXPECT_TRUE(q.try_emplace(1, 2));
-    EXPECT_TRUE(q.try_emplace(3, 4));
-    EXPECT_FALSE(q.try_emplace(5, 6));
-    EXPECT_EQ(q.front().first, 1);
+    hpc::containers::queue<int> q;
+    q.reserve(100);
+    EXPECT_GE(q.capacity(), 100u);
+    EXPECT_EQ(q.size(), 0u);
 }
 
-TEST(HpcFixedQueue, EmplaceThrowsOnFull)
+TEST(HpcDynamicQueue, ShrinkToFit)
 {
-    hpc::core::fixed_queue<int, 1> q;
-    q.emplace(42);
-    EXPECT_THROW(q.emplace(99), std::overflow_error);
+    hpc::containers::queue<int> q;
+    q.reserve(1024);
+    q.push(1);
+    q.push(2);
+    q.shrink_to_fit();
+    EXPECT_GE(q.capacity(), 2u);  // at least fits current size
+    EXPECT_LE(q.capacity(), 8u);  // shouldn't be 1024 anymore
+    EXPECT_EQ(q.front(), 1);
+    EXPECT_EQ(q.back(), 2);
+}
+
+TEST(HpcDynamicQueue, ShrinkToFitEmpty)
+{
+    hpc::containers::queue<int> q;
+    q.reserve(128);
+    q.shrink_to_fit();
+    EXPECT_EQ(q.capacity(), 0u);
 }
 
 // ---------------------------------------------------------------------------
 // Clear / Swap
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, Clear)
+TEST(HpcDynamicQueue, Clear)
 {
-    hpc::core::fixed_queue<int, 8> q{1, 2, 3, 4, 5};
+    hpc::containers::queue<int> q{1, 2, 3, 4, 5};
     q.clear();
     EXPECT_TRUE(q.empty());
     EXPECT_EQ(q.size(), 0u);
 }
 
-TEST(HpcFixedQueue, Swap)
+TEST(HpcDynamicQueue, Swap)
 {
-    hpc::core::fixed_queue<int, 8> a{1, 2};
-    hpc::core::fixed_queue<int, 8> b{10, 20, 30};
+    hpc::containers::queue<int> a{1, 2};
+    hpc::containers::queue<int> b{10, 20, 30};
     a.swap(b);
     EXPECT_EQ(a.size(), 3u);
     EXPECT_EQ(a.front(), 10);
@@ -201,33 +196,53 @@ TEST(HpcFixedQueue, Swap)
 }
 
 // ---------------------------------------------------------------------------
-// Wrap-around: push/pop past internal buffer boundary
+// Growth: push beyond initial capacity triggers reallocation
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, WrapAround)
+TEST(HpcDynamicQueue, GrowthOnPush)
 {
-    // Capacity 4 → internal buffer is 8 slots (next power of two >= 5).
-    hpc::core::fixed_queue<int, 4> q;
-
-    // Fill and drain a few times to force head_ past index 0.
-    for (int round = 0; round < 5; ++round) {
-        for (int i = 0; i < 4; ++i) q.push(round * 10 + i);
-        EXPECT_TRUE(q.full());
-        for (int i = 0; i < 4; ++i) {
-            EXPECT_EQ(q.front(), round * 10 + i);
-            q.pop();
-        }
-        EXPECT_TRUE(q.empty());
+    hpc::containers::queue<int> q;
+    for (int i = 0; i < 1000; ++i) q.push(i);
+    EXPECT_EQ(q.size(), 1000u);
+    for (int i = 0; i < 1000; ++i) {
+        EXPECT_EQ(q.front(), i);
+        q.pop();
     }
+    EXPECT_TRUE(q.empty());
+}
+
+// ---------------------------------------------------------------------------
+// Wrap-around + growth: grow while head > 0 (wrapped state)
+// ---------------------------------------------------------------------------
+
+TEST(HpcDynamicQueue, GrowWhileWrapped)
+{
+    hpc::containers::queue<int> q;
+    // Push some, pop some, so head_ advances past 0.
+    for (int i = 0; i < 6; ++i) q.push(i);
+    for (int i = 0; i < 4; ++i) q.pop();
+    // Now head_ > 0. Push enough to trigger growth.
+    for (int i = 100; i < 200; ++i) q.push(i);
+
+    // Verify FIFO order: remaining original + new.
+    EXPECT_EQ(q.front(), 4);
+    q.pop();
+    EXPECT_EQ(q.front(), 5);
+    q.pop();
+    for (int i = 100; i < 200; ++i) {
+        EXPECT_EQ(q.front(), i);
+        q.pop();
+    }
+    EXPECT_TRUE(q.empty());
 }
 
 // ---------------------------------------------------------------------------
 // Non-trivial types (std::string)
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, StringPushPop)
+TEST(HpcDynamicQueue, StringPushPop)
 {
-    hpc::core::fixed_queue<std::string, 4> q;
+    hpc::containers::queue<std::string> q;
     q.push("hello");
     q.push("world");
     EXPECT_EQ(q.front(), "hello");
@@ -235,9 +250,9 @@ TEST(HpcFixedQueue, StringPushPop)
     EXPECT_EQ(q.front(), "world");
 }
 
-TEST(HpcFixedQueue, StringMoveSemantics)
+TEST(HpcDynamicQueue, StringMoveSemantics)
 {
-    hpc::core::fixed_queue<std::string, 4> q;
+    hpc::containers::queue<std::string> q;
     std::string val = "moved_value";
     q.push(std::move(val));
     EXPECT_EQ(q.front(), "moved_value");
@@ -247,19 +262,16 @@ TEST(HpcFixedQueue, StringMoveSemantics)
 // Move-only types
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, MoveOnlyType)
+TEST(HpcDynamicQueue, MoveOnlyType)
 {
-    hpc::core::fixed_queue<std::unique_ptr<int>, 4> q;
+    hpc::containers::queue<std::unique_ptr<int>> q;
     q.push(std::make_unique<int>(42));
     q.push(std::make_unique<int>(99));
 
     EXPECT_EQ(*q.front(), 42);
-
-    std::unique_ptr<int> out;
-    EXPECT_TRUE(q.try_pop(out));
-    EXPECT_EQ(*out, 42);
-    EXPECT_TRUE(q.try_pop(out));
-    EXPECT_EQ(*out, 99);
+    q.pop();
+    EXPECT_EQ(*q.front(), 99);
+    q.pop();
     EXPECT_TRUE(q.empty());
 }
 
@@ -267,65 +279,97 @@ TEST(HpcFixedQueue, MoveOnlyType)
 // Over-aligned types
 // ---------------------------------------------------------------------------
 
-struct alignas(128) QueueOverAligned {
+struct alignas(128) DynQueueOverAligned {
     std::int64_t value;
 };
 
-TEST(HpcFixedQueue, OverAlignedType)
+TEST(HpcDynamicQueue, OverAlignedType)
 {
-    hpc::core::fixed_queue<QueueOverAligned, 4> q;
-    q.push(QueueOverAligned{100});
-    q.push(QueueOverAligned{200});
+    hpc::containers::queue<DynQueueOverAligned> q;
+    q.push(DynQueueOverAligned{100});
+    q.push(DynQueueOverAligned{200});
 
     EXPECT_EQ(q.front().value, 100);
     EXPECT_EQ(q.back().value, 200);
 
     auto addr = reinterpret_cast<std::uintptr_t>(&q.front());
-    EXPECT_EQ(addr % alignof(QueueOverAligned), 0u);
+    EXPECT_EQ(addr % alignof(DynQueueOverAligned), 0u);
 }
 
 // ---------------------------------------------------------------------------
 // Equality
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, Equality)
+TEST(HpcDynamicQueue, Equality)
 {
-    hpc::core::fixed_queue<int, 8> a{1, 2, 3};
-    hpc::core::fixed_queue<int, 8> b{1, 2, 3};
-    hpc::core::fixed_queue<int, 8> c{1, 2, 4};
+    hpc::containers::queue<int> a{1, 2, 3};
+    hpc::containers::queue<int> b{1, 2, 3};
+    hpc::containers::queue<int> c{1, 2, 4};
     EXPECT_EQ(a, b);
     EXPECT_NE(a, c);
+}
+
+TEST(HpcDynamicQueue, EqualityAfterWrap)
+{
+    // Build two queues with the same logical content but different internal layouts.
+    hpc::containers::queue<int> a;
+    for (int i = 0; i < 10; ++i) a.push(i);
+    for (int i = 0; i < 7; ++i) a.pop();  // head_ advanced
+
+    hpc::containers::queue<int> b;
+    for (int i = 7; i < 10; ++i) b.push(i);
+
+    EXPECT_EQ(a, b);
 }
 
 // ---------------------------------------------------------------------------
 // FIFO stress
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, FIFOStress)
+TEST(HpcDynamicQueue, FIFOStress)
 {
-    constexpr std::size_t N = 256;
-    hpc::core::fixed_queue<int, N> q;
+    constexpr int N = 10000;
+    hpc::containers::queue<int> q;
 
-    for (int i = 0; i < static_cast<int>(N); ++i)
-        q.push(i);
+    for (int i = 0; i < N; ++i) q.push(i);
+    EXPECT_EQ(q.size(), static_cast<std::size_t>(N));
 
-    EXPECT_TRUE(q.full());
-
-    for (int i = 0; i < static_cast<int>(N); ++i) {
+    for (int i = 0; i < N; ++i) {
         EXPECT_EQ(q.front(), i);
         q.pop();
     }
-
     EXPECT_TRUE(q.empty());
+}
+
+// ---------------------------------------------------------------------------
+// Interleaved push/pop stress (exercises wrap-around heavily)
+// ---------------------------------------------------------------------------
+
+TEST(HpcDynamicQueue, InterleavedStress)
+{
+    hpc::containers::queue<int> q;
+    int push_val = 0, pop_val = 0;
+    for (int round = 0; round < 100; ++round) {
+        for (int i = 0; i < 50; ++i) q.push(push_val++);
+        for (int i = 0; i < 30; ++i) {
+            EXPECT_EQ(q.front(), pop_val++);
+            q.pop();
+        }
+    }
+    while (!q.empty()) {
+        EXPECT_EQ(q.front(), pop_val++);
+        q.pop();
+    }
+    EXPECT_EQ(push_val, pop_val);
 }
 
 // ---------------------------------------------------------------------------
 // Const access
 // ---------------------------------------------------------------------------
 
-TEST(HpcFixedQueue, ConstAccess)
+TEST(HpcDynamicQueue, ConstAccess)
 {
-    hpc::core::fixed_queue<int, 4> q;
+    hpc::containers::queue<int> q;
     q.push(42);
     q.push(99);
     const auto& cq = q;
@@ -333,6 +377,15 @@ TEST(HpcFixedQueue, ConstAccess)
     EXPECT_EQ(cq.back(), 99);
     EXPECT_EQ(cq.size(), 2u);
     EXPECT_FALSE(cq.empty());
-    EXPECT_FALSE(cq.full());
 }
 
+
+// Regression: push(front()) must survive the reallocation it triggers.
+TEST(HpcDynamicQueue, SelfReferencingPushSurvivesGrowth)
+{
+    hpc::containers::queue<std::string> q;
+    q.push("first");
+    while (q.size() < q.capacity()) q.push("x");
+    q.push(q.front());
+    EXPECT_EQ(q.back(), "first");
+}

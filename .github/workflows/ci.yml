@@ -2,48 +2,60 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
   pull_request:
-    branches: [ main, master ]
 
 jobs:
-  build-and-test:
-    name: Build and Test (${{ matrix.os }}, ${{ matrix.build_type }})
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.cxx }} / ${{ matrix.build_type }}
     runs-on: ${{ matrix.os }}
-
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
-        build_type: [ Debug, Release ]
-
+        include:
+          - { os: ubuntu-24.04, cxx: g++-14,     build_type: Release }
+          - { os: ubuntu-24.04, cxx: clang++-18, build_type: Release }
+          - { os: ubuntu-24.04, cxx: g++-14,     build_type: Debug }
+          - { os: macos-15,     cxx: clang++,    build_type: Release }
+          - { os: windows-2022, cxx: cl,         build_type: Release }
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure CMake
+      - uses: actions/checkout@v4
+      - name: Install libnuma
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libnuma-dev
+      - name: Configure
         shell: bash
-        run: |
-          cmake -S . -B build \
-                -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-                -DHPC_ENABLE_TESTS=ON \
-                -DHPC_ENABLE_BENCHMARKS=ON
-
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DHPC_BENCH_NATIVE=OFF
+          ${{ runner.os != 'Windows' && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
       - name: Build
-        run: cmake --build build --config ${{ matrix.build_type }} --parallel 4
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+      - name: Test
+        run: ctest --test-dir build --build-config ${{ matrix.build_type }} --output-on-failure --parallel 4
+      - name: Benchmark smoke run
+        if: matrix.build_type == 'Release' && runner.os != 'Windows'
+        run: ./build/benchmarks/hpc_benchmarks --benchmark_min_time=0.01s --benchmark_filter='Spsc|Lock|Arena'
 
-      - name: Run tests (ctest)
-        working-directory: build
-        run: |
-          ctest --output-on-failure --build-config ${{ matrix.build_type }}
-
-      - name: Run smoke benchmarks
-        if: matrix.build_type == 'Release'
-        working-directory: build
-        run: |
-          if [ -f "benchmarks/hpc_benchmarks" ]; then \
-            ./benchmarks/hpc_benchmarks --benchmark_filter='SPSCQueue_Throughput|Malloc/1024|TTAS_Spinlock_Contention' --benchmark_min_time=0.01; \
-          elif [ -f "benchmarks/Release/hpc_benchmarks.exe" ]; then \
-            ./benchmarks/Release/hpc_benchmarks.exe --benchmark_filter="SPSCQueue_Throughput|Malloc/1024|TTAS_Spinlock_Contention" --benchmark_min_time=0.01; \
-          fi
-        shell: bash
+  sanitizers:
+    name: sanitize / ${{ matrix.sanitizer }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: ["address,undefined", "thread"]
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libnuma-dev
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER=clang++-18
+          -DHPC_BUILD_BENCHMARKS=OFF
+          -DHPC_SANITIZE=${{ matrix.sanitizer }}
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure --parallel 4
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1

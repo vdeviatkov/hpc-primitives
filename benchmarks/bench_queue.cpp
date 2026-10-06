@@ -1,49 +1,180 @@
 #include <benchmark/benchmark.h>
 
-#include <hpc/core/ring_buffer.hpp>
-#include <hpc/support/cpu_topology.hpp>
+#include <hpc/containers/queue.hpp>
 
+#include <cstdint>
 #include <queue>
-#include <thread>
+#include <string>
 
 namespace {
 
-void BM_SPSCQueue_Throughput(benchmark::State& state)
+// ---------------------------------------------------------------------------
+// Push N integers
+// ---------------------------------------------------------------------------
+
+void BM_StdQueue_Push_Int(benchmark::State& state)
 {
-    constexpr std::size_t capacity = 1 << 16;
-    hpc::core::spsc_ring_buffer<std::uint64_t> q(capacity);
-
+    const auto n = static_cast<std::size_t>(state.range(0));
+    std::queue<int> q;
     for (auto _ : state) {
-        std::uint64_t value = 0;
-        for (std::size_t i = 0; i < static_cast<std::size_t>(state.range(0)); ++i) {
-            while (!q.try_push(value)) {
-            }
-            while (!q.try_pop(value)) {
-            }
-        }
+        for (std::size_t i = 0; i < n; ++i) q.push(static_cast<int>(i));
+        benchmark::DoNotOptimize(&q);
+        state.PauseTiming();
+        while (!q.empty()) q.pop();
+        state.ResumeTiming();
     }
-
-    state.SetItemsProcessed(state.iterations() * state.range(0));
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
 }
 
-void BM_StdQueue_Throughput(benchmark::State& state)
+void BM_HpcQueue_Push_Int(benchmark::State& state)
 {
-    std::queue<std::uint64_t> q;
-
+    const auto n = static_cast<std::size_t>(state.range(0));
+    hpc::containers::queue<int> q;
     for (auto _ : state) {
-        std::uint64_t value = 0;
-        for (std::size_t i = 0; i < static_cast<std::size_t>(state.range(0)); ++i) {
-            q.push(value);
-            value = q.front();
+        for (std::size_t i = 0; i < n; ++i) q.push(static_cast<int>(i));
+        benchmark::DoNotOptimize(&q);
+        state.PauseTiming();
+        q.clear();
+        state.ResumeTiming();
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+}
+
+// ---------------------------------------------------------------------------
+// Push N integers (pre-reserved)
+// ---------------------------------------------------------------------------
+
+void BM_HpcQueue_PushReserved_Int(benchmark::State& state)
+{
+    const auto n = static_cast<std::size_t>(state.range(0));
+    hpc::containers::queue<int> q;
+    q.reserve(n);
+    for (auto _ : state) {
+        for (std::size_t i = 0; i < n; ++i) q.push(static_cast<int>(i));
+        benchmark::DoNotOptimize(&q);
+        state.PauseTiming();
+        q.clear();
+        state.ResumeTiming();
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+}
+
+// ---------------------------------------------------------------------------
+// Pop N integers (pre-filled)
+// ---------------------------------------------------------------------------
+
+void BM_StdQueue_Pop_Int(benchmark::State& state)
+{
+    const auto n = static_cast<std::size_t>(state.range(0));
+    std::queue<int> q;
+    for (auto _ : state) {
+        state.PauseTiming();
+        for (std::size_t i = 0; i < n; ++i) q.push(static_cast<int>(i));
+        state.ResumeTiming();
+        while (!q.empty()) {
+            benchmark::DoNotOptimize(q.front());
             q.pop();
         }
     }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+}
 
-    state.SetItemsProcessed(state.iterations() * state.range(0));
+void BM_HpcQueue_Pop_Int(benchmark::State& state)
+{
+    const auto n = static_cast<std::size_t>(state.range(0));
+    hpc::containers::queue<int> q;
+    for (auto _ : state) {
+        state.PauseTiming();
+        for (std::size_t i = 0; i < n; ++i) q.push(static_cast<int>(i));
+        state.ResumeTiming();
+        while (!q.empty()) {
+            benchmark::DoNotOptimize(q.front());
+            q.pop();
+        }
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+}
+
+// ---------------------------------------------------------------------------
+// Push + Pop round-trip (interleaved, depth-1)
+// ---------------------------------------------------------------------------
+
+void BM_StdQueue_PushPop_Int(benchmark::State& state)
+{
+    const auto n = static_cast<std::size_t>(state.range(0));
+    std::queue<int> q;
+    for (auto _ : state) {
+        for (std::size_t i = 0; i < n; ++i) {
+            q.push(static_cast<int>(i));
+            benchmark::DoNotOptimize(q.front());
+            q.pop();
+        }
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+}
+
+void BM_HpcQueue_PushPop_Int(benchmark::State& state)
+{
+    const auto n = static_cast<std::size_t>(state.range(0));
+    hpc::containers::queue<int> q;
+    for (auto _ : state) {
+        for (std::size_t i = 0; i < n; ++i) {
+            q.push(static_cast<int>(i));
+            benchmark::DoNotOptimize(q.front());
+            q.pop();
+        }
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+}
+
+// ---------------------------------------------------------------------------
+// Push N strings (non-trivial type)
+// ---------------------------------------------------------------------------
+
+void BM_StdQueue_Push_String(benchmark::State& state)
+{
+    const auto n = static_cast<std::size_t>(state.range(0));
+    std::queue<std::string> q;
+    for (auto _ : state) {
+        for (std::size_t i = 0; i < n; ++i) q.push("benchmark_string");
+        benchmark::DoNotOptimize(&q);
+        state.PauseTiming();
+        while (!q.empty()) q.pop();
+        state.ResumeTiming();
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
+}
+
+void BM_HpcQueue_Push_String(benchmark::State& state)
+{
+    const auto n = static_cast<std::size_t>(state.range(0));
+    hpc::containers::queue<std::string> q;
+    for (auto _ : state) {
+        for (std::size_t i = 0; i < n; ++i) q.push("benchmark_string");
+        benchmark::DoNotOptimize(&q);
+        state.PauseTiming();
+        q.clear();
+        state.ResumeTiming();
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(n));
 }
 
 } // namespace
 
-BENCHMARK(BM_SPSCQueue_Throughput)->Arg(1 << 10);
-BENCHMARK(BM_StdQueue_Throughput)->Arg(1 << 10);
+// -- Push int --
+BENCHMARK(BM_StdQueue_Push_Int)->RangeMultiplier(4)->Range(64, 1 << 16);
+BENCHMARK(BM_HpcQueue_Push_Int)->RangeMultiplier(4)->Range(64, 1 << 16);
+BENCHMARK(BM_HpcQueue_PushReserved_Int)->RangeMultiplier(4)->Range(64, 1 << 16);
+
+// -- Pop int --
+BENCHMARK(BM_StdQueue_Pop_Int)->RangeMultiplier(4)->Range(64, 1 << 16);
+BENCHMARK(BM_HpcQueue_Pop_Int)->RangeMultiplier(4)->Range(64, 1 << 16);
+
+// -- Push+Pop round-trip int --
+BENCHMARK(BM_StdQueue_PushPop_Int)->RangeMultiplier(4)->Range(64, 1 << 16);
+BENCHMARK(BM_HpcQueue_PushPop_Int)->RangeMultiplier(4)->Range(64, 1 << 16);
+
+// -- Push string --
+BENCHMARK(BM_StdQueue_Push_String)->RangeMultiplier(4)->Range(64, 1 << 14);
+BENCHMARK(BM_HpcQueue_Push_String)->RangeMultiplier(4)->Range(64, 1 << 14);
 

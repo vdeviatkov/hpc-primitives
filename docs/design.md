@@ -1,0 +1,93 @@
+# Design notes
+
+Why the primitives look the way they do. Per-function contracts live in the
+headers.
+
+## Concurrent queues
+
+| Type | Producers / consumers | Bounded | Progress |
+|---|---|---|---|
+| `spsc_queue<T>` | 1 / 1 | yes | wait-free |
+| `spsc_unbounded_queue<T>` | 1 / 1 | no (segments) | wait-free pop; push allocates once per segment |
+| `mpmc_queue<T>` | N / M | yes | lock-free |
+
+**Per-slot sequence numbers, even for SPSC.** The textbook SPSC ring (shared
+`head`/`tail`, optionally with cached copies) collapses when one side polls:
+a consumer spinning on an empty queue keeps pulling the `tail` cache line
+away from the producer, which slows the producer, which keeps the queue empty.
+On an Apple M4 Max that feedback loop held a 64 Ki-slot ring at about 14 M items/s
+(the consumer failed ~80 polls per item) against about 250 M/s at 256 slots.
+With a sequence number in each slot, each side polls only the slot it is
+waiting for and never reads the other side's counter. Throughput becomes
+insensitive to capacity (167–470 M/s across 256–64 Ki slots). The cost is
+8 bytes per slot.
+
+**`mpmc_queue` is Vyukov's bounded queue.** A CAS on `head`/`tail` reserves
+a position; the release store to the slot's sequence publishes the data.
+Positions are 64-bit, so there is no ABA. It is not linearizable as a whole:
+`try_pop` can report empty while a producer that claimed an earlier position
+is still writing.
+
+Under heavy symmetric contention (4 producers + 4 consumers busy-polling)
+on Apple Silicon, this queue is slower than `std::mutex` + `std::queue`,
+because cross-cluster CAS is expensive and the mutex parks waiters. Neither
+padding slots onto separate cache lines nor CAS backoff changed that. Use
+it when threads do real work between operations, or when you need bounded
+memory and no syscalls. Do not use it for an 8-thread ping-pong.
+
+**No unbounded MPMC.** A linked-segment MPMC queue needs safe memory
+reclamation (hazard pointers or epochs) before a consumer can free a drained
+segment. An earlier version skipped that and leaked every segment.
+
+## Memory
+
+- `arena` is header-only so that `allocate` inlines to a few instructions
+  (align, compare, bump). The bounds check is written to be overflow-safe.
+- `fixed_pool` rounds blocks up to the requested alignment, so the intrusive
+  free-list pointer stored in each free block is always aligned. The free
+  list is built so the first allocations walk the slab forwards.
+- `map_pages` asks for explicit huge pages (`MAP_HUGETLB`, `MEM_LARGE_PAGES`)
+  and otherwise returns regular pages, with an `MADV_HUGEPAGE` hint on Linux.
+  `page_region::huge` reports which one you got. Mapping is a syscall, so the
+  benefit is fewer TLB misses afterwards, not faster allocation.
+- `numa_arena` takes its memory from `numa_alloc_onnode`, which is
+  page-aligned and bound with `MPOL_BIND`. That is the only reliable way to
+  place an arena on a node: `mbind` on `operator new` memory fails when the
+  address is not page-aligned.
+
+## Containers
+
+These are drop-in shapes of their `std` counterparts, so the differences are
+the point:
+
+- `queue<T>` is one power-of-two ring buffer. `std::queue` defaults to
+  `std::deque`, which allocates chunks as the queue moves.
+- `fixed_queue<T, N>` and `fixed_stack<T, N>` have inline storage and never
+  allocate. Their `try_*` operations report full or empty instead of throwing.
+- `vector<T>` and `queue<T>` construct the new element before relocating on
+  growth, so `v.push_back(v[0])` is safe. Relocation uses
+  `std::uninitialized_move`, which lowers to `memmove` for trivially copyable
+  `T`, and falls back to copying when `T`'s move can throw.
+- A default-constructed or moved-from `deque<T>` owns no memory. The chunk
+  map is allocated on first insertion.
+
+## Shared-memory IPC
+
+`shm_spsc_queue<T>` has a fixed layout, documented in
+[`shm_spsc_queue.hpp`](../include/hpc/ipc/shm_spsc_queue.hpp), so that
+processes in other languages can attach:
+
+```text
+  0  u64 magic ("HPCSPSQ1"), u64 capacity, u64 sizeof(T)
+128  u64 tail   (producer)
+256  u64 head   (consumer)
+384  T slots[capacity]
+```
+
+The creator writes `magic` last, with release semantics, and `open()`
+validates it together with `sizeof(T)`, so a reader can't attach to a
+half-initialized or incompatible queue. Head and tail are lock-free
+`std::atomic<uint64_t>`, which is address-free and therefore valid across
+processes. `T` must be trivially copyable and pointer-free.
+[`examples/shm_subscriber.py`](../examples/shm_subscriber.py) consumes from
+Python with only the standard library.

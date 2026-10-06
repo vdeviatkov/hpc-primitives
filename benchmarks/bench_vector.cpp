@@ -1,6 +1,6 @@
 #include <benchmark/benchmark.h>
 
-#include <hpc/core/vector.hpp>
+#include <hpc/containers/vector.hpp>
 
 #include <cstdint>
 #include <string>
@@ -23,7 +23,7 @@ void BM_HpcVector_PushBack_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
     for (auto _ : state) {
-        hpc::core::vector<int> v;
+        hpc::containers::vector<int> v;
         for (std::size_t i = 0; i < n; ++i) v.push_back(static_cast<int>(i));
         benchmark::DoNotOptimize(v.data());
     }
@@ -46,7 +46,7 @@ void BM_HpcVector_PushBackReserved_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
     for (auto _ : state) {
-        hpc::core::vector<int> v;
+        hpc::containers::vector<int> v;
         v.reserve(n);
         for (std::size_t i = 0; i < n; ++i) v.push_back(static_cast<int>(i));
         benchmark::DoNotOptimize(v.data());
@@ -69,7 +69,7 @@ void BM_HpcVector_EmplaceBack_String(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
     for (auto _ : state) {
-        hpc::core::vector<std::string> v;
+        hpc::containers::vector<std::string> v;
         for (std::size_t i = 0; i < n; ++i) v.emplace_back("benchmark_string");
         benchmark::DoNotOptimize(v.data());
     }
@@ -93,7 +93,7 @@ void BM_StdVector_RandomAccess(benchmark::State& state)
 void BM_HpcVector_RandomAccess(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    hpc::core::vector<int> v(n);
+    hpc::containers::vector<int> v(n);
     for (std::size_t i = 0; i < n; ++i) v[i] = static_cast<int>(i);
 
     for (auto _ : state) {
@@ -120,7 +120,7 @@ void BM_StdVector_Iterate(benchmark::State& state)
 void BM_HpcVector_Iterate(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    hpc::core::vector<int> v(n);
+    hpc::containers::vector<int> v(n);
     for (std::size_t i = 0; i < n; ++i) v[i] = 1;
 
     for (auto _ : state) {
@@ -146,7 +146,7 @@ void BM_HpcVector_InsertFront(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
     for (auto _ : state) {
-        hpc::core::vector<int> v;
+        hpc::containers::vector<int> v;
         for (std::size_t i = 0; i < n; ++i) v.insert(v.begin(), static_cast<int>(i));
         benchmark::DoNotOptimize(v.data());
     }
@@ -173,7 +173,7 @@ void BM_HpcVector_PopBack(benchmark::State& state)
     const auto n = static_cast<std::size_t>(state.range(0));
     for (auto _ : state) {
         state.PauseTiming();
-        hpc::core::vector<int> v(n);
+        hpc::containers::vector<int> v(n);
         for (std::size_t i = 0; i < n; ++i) v[i] = 42;
         state.ResumeTiming();
         while (!v.empty()) {

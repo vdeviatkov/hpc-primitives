@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <hpc/core/deque.hpp>
+#include <hpc/containers/deque.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -15,28 +15,28 @@
 
 TEST(HpcDeque, DefaultConstruct)
 {
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     EXPECT_TRUE(d.empty());
     EXPECT_EQ(d.size(), 0u);
 }
 
 TEST(HpcDeque, ConstructWithCount)
 {
-    hpc::core::deque<int> d(5);
+    hpc::containers::deque<int> d(5);
     EXPECT_EQ(d.size(), 5u);
     for (auto& e : d) EXPECT_EQ(e, 0);
 }
 
 TEST(HpcDeque, ConstructWithCountAndValue)
 {
-    hpc::core::deque<int> d(4, 42);
+    hpc::containers::deque<int> d(4, 42);
     EXPECT_EQ(d.size(), 4u);
     for (auto& e : d) EXPECT_EQ(e, 42);
 }
 
 TEST(HpcDeque, InitializerListConstruct)
 {
-    hpc::core::deque<int> d{1, 2, 3, 4, 5};
+    hpc::containers::deque<int> d{1, 2, 3, 4, 5};
     EXPECT_EQ(d.size(), 5u);
     EXPECT_EQ(d[0], 1);
     EXPECT_EQ(d[4], 5);
@@ -45,7 +45,7 @@ TEST(HpcDeque, InitializerListConstruct)
 TEST(HpcDeque, IteratorRangeConstruct)
 {
     std::vector<int> src{10, 20, 30};
-    hpc::core::deque<int> d(src.begin(), src.end());
+    hpc::containers::deque<int> d(src.begin(), src.end());
     EXPECT_EQ(d.size(), 3u);
     EXPECT_EQ(d[0], 10);
     EXPECT_EQ(d[2], 30);
@@ -53,8 +53,8 @@ TEST(HpcDeque, IteratorRangeConstruct)
 
 TEST(HpcDeque, CopyConstruct)
 {
-    hpc::core::deque<int> a{1, 2, 3};
-    hpc::core::deque<int> b(a);
+    hpc::containers::deque<int> a{1, 2, 3};
+    hpc::containers::deque<int> b(a);
     EXPECT_EQ(a, b);
     a[0] = 99;
     EXPECT_NE(a, b);
@@ -62,24 +62,24 @@ TEST(HpcDeque, CopyConstruct)
 
 TEST(HpcDeque, MoveConstruct)
 {
-    hpc::core::deque<int> a{1, 2, 3};
-    hpc::core::deque<int> b(std::move(a));
+    hpc::containers::deque<int> a{1, 2, 3};
+    hpc::containers::deque<int> b(std::move(a));
     EXPECT_EQ(b.size(), 3u);
     EXPECT_TRUE(a.empty());
 }
 
 TEST(HpcDeque, CopyAssign)
 {
-    hpc::core::deque<int> a{1, 2, 3};
-    hpc::core::deque<int> b;
+    hpc::containers::deque<int> a{1, 2, 3};
+    hpc::containers::deque<int> b;
     b = a;
     EXPECT_EQ(a, b);
 }
 
 TEST(HpcDeque, MoveAssign)
 {
-    hpc::core::deque<int> a{4, 5, 6};
-    hpc::core::deque<int> b;
+    hpc::containers::deque<int> a{4, 5, 6};
+    hpc::containers::deque<int> b;
     b = std::move(a);
     EXPECT_EQ(b.size(), 3u);
     EXPECT_EQ(b[0], 4);
@@ -87,7 +87,7 @@ TEST(HpcDeque, MoveAssign)
 
 TEST(HpcDeque, InitializerListAssign)
 {
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     d = {7, 8, 9};
     EXPECT_EQ(d.size(), 3u);
     EXPECT_EQ(d[1], 8);
@@ -99,21 +99,21 @@ TEST(HpcDeque, InitializerListAssign)
 
 TEST(HpcDeque, AtBoundsCheck)
 {
-    hpc::core::deque<int> d{1, 2};
+    hpc::containers::deque<int> d{1, 2};
     EXPECT_EQ(d.at(0), 1);
     EXPECT_THROW(d.at(2), std::out_of_range);
 }
 
 TEST(HpcDeque, FrontBack)
 {
-    hpc::core::deque<int> d{10, 20, 30};
+    hpc::containers::deque<int> d{10, 20, 30};
     EXPECT_EQ(d.front(), 10);
     EXPECT_EQ(d.back(), 30);
 }
 
 TEST(HpcDeque, RandomAccess)
 {
-    hpc::core::deque<int> d{10, 20, 30, 40};
+    hpc::containers::deque<int> d{10, 20, 30, 40};
     EXPECT_EQ(d[0], 10);
     EXPECT_EQ(d[3], 40);
     d[1] = 99;
@@ -126,7 +126,7 @@ TEST(HpcDeque, RandomAccess)
 
 TEST(HpcDeque, PushBackPopBack)
 {
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     d.push_back(1);
     d.push_back(2);
     d.push_back(3);
@@ -142,7 +142,7 @@ TEST(HpcDeque, PushBackPopBack)
 
 TEST(HpcDeque, EmplaceBack)
 {
-    hpc::core::deque<std::pair<int, std::string>> d;
+    hpc::containers::deque<std::pair<int, std::string>> d;
     d.emplace_back(1, "one");
     d.emplace_back(2, "two");
     EXPECT_EQ(d.back().first, 2);
@@ -155,7 +155,7 @@ TEST(HpcDeque, EmplaceBack)
 
 TEST(HpcDeque, PushFrontPopFront)
 {
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     d.push_front(1);
     d.push_front(2);
     d.push_front(3);
@@ -171,7 +171,7 @@ TEST(HpcDeque, PushFrontPopFront)
 
 TEST(HpcDeque, EmplaceFront)
 {
-    hpc::core::deque<std::pair<int, std::string>> d;
+    hpc::containers::deque<std::pair<int, std::string>> d;
     d.emplace_front(1, "one");
     d.emplace_front(2, "two");
     EXPECT_EQ(d.front().first, 2);
@@ -184,7 +184,7 @@ TEST(HpcDeque, EmplaceFront)
 
 TEST(HpcDeque, MixedPushFrontBack)
 {
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     d.push_back(3);
     d.push_front(2);
     d.push_back(4);
@@ -203,7 +203,7 @@ TEST(HpcDeque, MixedPushFrontBack)
 
 TEST(HpcDeque, ForwardIteration)
 {
-    hpc::core::deque<int> d{1, 2, 3};
+    hpc::containers::deque<int> d{1, 2, 3};
     int sum = 0;
     for (auto it = d.begin(); it != d.end(); ++it) sum += *it;
     EXPECT_EQ(sum, 6);
@@ -211,7 +211,7 @@ TEST(HpcDeque, ForwardIteration)
 
 TEST(HpcDeque, ReverseIteration)
 {
-    hpc::core::deque<int> d{1, 2, 3};
+    hpc::containers::deque<int> d{1, 2, 3};
     std::vector<int> rev(d.rbegin(), d.rend());
     EXPECT_EQ(rev[0], 3);
     EXPECT_EQ(rev[2], 1);
@@ -219,7 +219,7 @@ TEST(HpcDeque, ReverseIteration)
 
 TEST(HpcDeque, ConstIterators)
 {
-    const hpc::core::deque<int> d{4, 5, 6};
+    const hpc::containers::deque<int> d{4, 5, 6};
     int sum = 0;
     for (auto it = d.cbegin(); it != d.cend(); ++it) sum += *it;
     EXPECT_EQ(sum, 15);
@@ -227,7 +227,7 @@ TEST(HpcDeque, ConstIterators)
 
 TEST(HpcDeque, RangeFor)
 {
-    hpc::core::deque<int> d{10, 20, 30};
+    hpc::containers::deque<int> d{10, 20, 30};
     int sum = 0;
     for (auto x : d) sum += x;
     EXPECT_EQ(sum, 60);
@@ -235,7 +235,7 @@ TEST(HpcDeque, RangeFor)
 
 TEST(HpcDeque, IteratorRandomAccess)
 {
-    hpc::core::deque<int> d{10, 20, 30, 40, 50};
+    hpc::containers::deque<int> d{10, 20, 30, 40, 50};
     auto it = d.begin();
     EXPECT_EQ(it[2], 30);
     EXPECT_EQ(*(it + 4), 50);
@@ -244,7 +244,7 @@ TEST(HpcDeque, IteratorRandomAccess)
 
 TEST(HpcDeque, StdAlgorithmSort)
 {
-    hpc::core::deque<int> d{5, 3, 1, 4, 2};
+    hpc::containers::deque<int> d{5, 3, 1, 4, 2};
     std::sort(d.begin(), d.end());
     for (std::size_t i = 0; i < d.size(); ++i)
         EXPECT_EQ(d[i], static_cast<int>(i + 1));
@@ -256,7 +256,7 @@ TEST(HpcDeque, StdAlgorithmSort)
 
 TEST(HpcDeque, ReferenceStabilityPushBack)
 {
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     d.push_back(42);
     int& ref = d.front();
     // Push enough to trigger chunk allocation / map reallocation.
@@ -267,7 +267,7 @@ TEST(HpcDeque, ReferenceStabilityPushBack)
 
 TEST(HpcDeque, ReferenceStabilityPushFront)
 {
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     d.push_back(99);
     int& ref = d.back();
     for (int i = 0; i < 10000; ++i) d.push_front(i);
@@ -280,7 +280,7 @@ TEST(HpcDeque, ReferenceStabilityPushFront)
 
 TEST(HpcDeque, ResizeGrow)
 {
-    hpc::core::deque<int> d{1, 2, 3};
+    hpc::containers::deque<int> d{1, 2, 3};
     d.resize(5);
     EXPECT_EQ(d.size(), 5u);
     EXPECT_EQ(d[0], 1);
@@ -290,7 +290,7 @@ TEST(HpcDeque, ResizeGrow)
 
 TEST(HpcDeque, ResizeShrink)
 {
-    hpc::core::deque<int> d{1, 2, 3, 4, 5};
+    hpc::containers::deque<int> d{1, 2, 3, 4, 5};
     d.resize(2);
     EXPECT_EQ(d.size(), 2u);
     EXPECT_EQ(d[0], 1);
@@ -299,7 +299,7 @@ TEST(HpcDeque, ResizeShrink)
 
 TEST(HpcDeque, ResizeWithValue)
 {
-    hpc::core::deque<int> d{1};
+    hpc::containers::deque<int> d{1};
     d.resize(4, 42);
     EXPECT_EQ(d.size(), 4u);
     EXPECT_EQ(d[0], 1);
@@ -313,15 +313,15 @@ TEST(HpcDeque, ResizeWithValue)
 
 TEST(HpcDeque, Clear)
 {
-    hpc::core::deque<int> d{1, 2, 3};
+    hpc::containers::deque<int> d{1, 2, 3};
     d.clear();
     EXPECT_TRUE(d.empty());
 }
 
 TEST(HpcDeque, Swap)
 {
-    hpc::core::deque<int> a{1, 2};
-    hpc::core::deque<int> b{10, 20, 30};
+    hpc::containers::deque<int> a{1, 2};
+    hpc::containers::deque<int> b{10, 20, 30};
     a.swap(b);
     EXPECT_EQ(a.size(), 3u);
     EXPECT_EQ(a.front(), 10);
@@ -335,7 +335,7 @@ TEST(HpcDeque, Swap)
 
 TEST(HpcDeque, GrowWhileWrapped)
 {
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     for (int i = 0; i < 6; ++i) d.push_back(i);
     for (int i = 0; i < 4; ++i) d.pop_front();
     // head_ > 0 now; push enough to trigger growth.
@@ -352,12 +352,12 @@ TEST(HpcDeque, GrowWhileWrapped)
 
 TEST(HpcDeque, GrowViaPushFront)
 {
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     for (int i = 0; i < 100; ++i) d.push_front(i);
     EXPECT_EQ(d.size(), 100u);
     // push_front inserts in reverse order at the front.
     for (int i = 0; i < 100; ++i)
-        EXPECT_EQ(d[i], 99 - i);
+        EXPECT_EQ(d[static_cast<std::size_t>(i)], 99 - i);
 }
 
 // ---------------------------------------------------------------------------
@@ -366,7 +366,7 @@ TEST(HpcDeque, GrowViaPushFront)
 
 TEST(HpcDeque, StringPushPop)
 {
-    hpc::core::deque<std::string> d;
+    hpc::containers::deque<std::string> d;
     d.push_back("hello");
     d.push_front("world");
     EXPECT_EQ(d.front(), "world");
@@ -375,7 +375,7 @@ TEST(HpcDeque, StringPushPop)
 
 TEST(HpcDeque, StringMoveSemantics)
 {
-    hpc::core::deque<std::string> d;
+    hpc::containers::deque<std::string> d;
     std::string v = "moved";
     d.push_back(std::move(v));
     EXPECT_EQ(d.back(), "moved");
@@ -387,7 +387,7 @@ TEST(HpcDeque, StringMoveSemantics)
 
 TEST(HpcDeque, MoveOnlyType)
 {
-    hpc::core::deque<std::unique_ptr<int>> d;
+    hpc::containers::deque<std::unique_ptr<int>> d;
     d.push_back(std::make_unique<int>(42));
     d.push_front(std::make_unique<int>(99));
     EXPECT_EQ(*d.front(), 99);
@@ -406,7 +406,7 @@ struct alignas(128) DequeOverAligned {
 
 TEST(HpcDeque, OverAlignedType)
 {
-    hpc::core::deque<DequeOverAligned> d;
+    hpc::containers::deque<DequeOverAligned> d;
     d.push_back(DequeOverAligned{100});
     d.push_back(DequeOverAligned{200});
     EXPECT_EQ(d.front().value, 100);
@@ -421,9 +421,9 @@ TEST(HpcDeque, OverAlignedType)
 
 TEST(HpcDeque, Equality)
 {
-    hpc::core::deque<int> a{1, 2, 3};
-    hpc::core::deque<int> b{1, 2, 3};
-    hpc::core::deque<int> c{1, 2, 4};
+    hpc::containers::deque<int> a{1, 2, 3};
+    hpc::containers::deque<int> b{1, 2, 3};
+    hpc::containers::deque<int> c{1, 2, 4};
     EXPECT_EQ(a, b);
     EXPECT_NE(a, c);
 }
@@ -435,13 +435,13 @@ TEST(HpcDeque, Equality)
 TEST(HpcDeque, Stress)
 {
     constexpr int N = 5000;
-    hpc::core::deque<int> d;
+    hpc::containers::deque<int> d;
     for (int i = 0; i < N; ++i) d.push_back(i);
     for (int i = 0; i < N; ++i) d.push_front(-i - 1);
     // Elements: [-5000, ..., -1, 0, 1, ..., 4999]
     EXPECT_EQ(d.size(), static_cast<std::size_t>(2 * N));
     for (int i = 0; i < 2 * N; ++i)
-        EXPECT_EQ(d[i], i - N);
+        EXPECT_EQ(d[static_cast<std::size_t>(i)], i - N);
 }
 
 // ---------------------------------------------------------------------------
@@ -450,7 +450,7 @@ TEST(HpcDeque, Stress)
 
 TEST(HpcDeque, ConstAccess)
 {
-    hpc::core::deque<int> d{1, 2, 3};
+    hpc::containers::deque<int> d{1, 2, 3};
     const auto& cd = d;
     EXPECT_EQ(cd.front(), 1);
     EXPECT_EQ(cd.back(), 3);
@@ -459,3 +459,27 @@ TEST(HpcDeque, ConstAccess)
     EXPECT_FALSE(cd.empty());
 }
 
+
+// Regression: a moved-from deque must be reusable.
+TEST(HpcDeque, MovedFromIsReusable)
+{
+    hpc::containers::deque<int> a{1, 2, 3};
+    hpc::containers::deque<int> b(std::move(a));
+    EXPECT_TRUE(a.empty());
+    EXPECT_EQ(a.size(), 0u);
+    EXPECT_EQ(a.begin(), a.end());
+    a.push_back(4);
+    a.push_front(3);
+    EXPECT_EQ(a.size(), 2u);
+    EXPECT_EQ(a.front(), 3);
+    EXPECT_EQ(a.back(), 4);
+}
+
+TEST(HpcDeque, PushFrontIntoDefaultConstructed)
+{
+    hpc::containers::deque<int> d;
+    for (int i = 0; i < 1000; ++i) d.push_front(i);
+    EXPECT_EQ(d.size(), 1000u);
+    EXPECT_EQ(d.front(), 999);
+    EXPECT_EQ(d.back(), 0);
+}

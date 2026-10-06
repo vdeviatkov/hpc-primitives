@@ -1,30 +1,21 @@
 add_executable(hpc_benchmarks
-    bench_queue.cpp
-    bench_allocator.cpp
+    bench_concurrent_queues.cpp
     bench_spinlock.cpp
-    bench_mpmc_ring_buffer.cpp
+    bench_memory.cpp
     bench_vector.cpp
-    bench_stack.cpp
-    bench_fixed_queue.cpp
-    bench_dynamic_queue.cpp
     bench_deque.cpp
+    bench_queue.cpp
+    bench_fixed_queue.cpp
+    bench_fixed_stack.cpp
 )
+target_link_libraries(hpc_benchmarks PRIVATE hpc::primitives benchmark::benchmark_main)
+hpc_configure_target(hpc_benchmarks)
 
-# NUMA-specific benchmarks only make sense when NUMA support is enabled.
-# On non-Linux platforms (or when libnuma isn't available), hpc_core is built
-# without numa_arena/numa_pool implementations.
-if (HPC_HAS_NUMA_H AND HPC_HAS_LIBNUMA)
-    target_sources(hpc_benchmarks PRIVATE bench_numa_hugepages.cpp)
-else()
-    message(STATUS "Skipping bench_numa_hugepages.cpp (NUMA support not available)")
-endif()
-
-target_link_libraries(hpc_benchmarks PRIVATE
-    hpc_core
-    benchmark::benchmark_main
-)
-
-# Favor performance for benchmarks
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(hpc_benchmarks PRIVATE -O3 -DNDEBUG -march=native)
+option(HPC_BENCH_NATIVE "Compile benchmarks with -march=native" ON)
+if(HPC_BENCH_NATIVE AND NOT MSVC)
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag(-march=native HPC_HAS_MARCH_NATIVE)
+    if(HPC_HAS_MARCH_NATIVE)
+        target_compile_options(hpc_benchmarks PRIVATE -march=native)
+    endif()
 endif()

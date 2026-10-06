@@ -1,104 +1,20 @@
-# gitignore for C++ projects (CMake, CLion, Visual Studio) + common OS/editors/python
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE / Editor
-.idea/
-*.iml
-.vscode/
-*.sublime-workspace
-*.sublime-project
-
-# CLion / CMake
-cmake-build-*/
-cmake-build-debug/
-CMakeCache.txt
-CMakeFiles/
-CTestTestfile.cmake
-cmake_install.cmake
-Makefile
-
-# Build directories (common)
-build/
-build-fix/
-build_ci/
-out/
-dist/
-results/
-
-# Compiled object files
-*.o
-*.obj
-*.lo
-*.slo
-
-# Static / dynamic libraries
-*.a
-*.lib
-*.la
-*.lai
-*.so
-*.dylib
-*.dll
-
-# Executables
-*.exe
-*.out
-*.app
-
-# Debug / profiling
-*.pdb
-*.dwo
-*.dSYM/
-*.prof
-*.gcda
-*.gcno
-*.gcov
-
-# Coverage / Test reports
-coverage/
-*.lcov
-*.coverage
-test-results/
-*.tap
-
-# Packaging / archives
-*.tar
-*.tar.gz
-*.zip
-*.7z
-
-# Logs and temporary files
-*.log
-*.tmp
-*.temp
-*~
-*.swp
-
-# Generated files
+# Build trees
+/build*/
+/cmake-build-*/
+/out/
+CMakeUserPresets.json
 compile_commands.json
-*.cmd
-*.make
 
-# Visual Studio
-*.sln
-*.vcxproj*
-*.user
-*.suo
-*.userosscache
-*.cache
+# IDEs / editors
+.idea/
+.vscode/
+.cache/
+*.swp
+*~
 
-# Python (project includes python)
+# Python
+.venv/
 __pycache__/
-*.py[cod]
-*.pyo
-venv/
-ENV/
-.env
 
-# Misc
-tags
-.idea_modules/
-.externalNativeBuild/
+# OS
+.DS_Store

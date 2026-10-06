@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <hpc/core/vector.hpp>
+#include <hpc/containers/vector.hpp>
 #include <algorithm>
 #include <cstdint>
 #include <numeric>
@@ -7,7 +7,7 @@
 #include <utility>
 TEST(HpcVector, DefaultConstruct)
 {
-    hpc::core::vector<int> v;
+    hpc::containers::vector<int> v;
     EXPECT_TRUE(v.empty());
     EXPECT_EQ(v.size(), 0u);
     EXPECT_EQ(v.capacity(), 0u);
@@ -15,19 +15,19 @@ TEST(HpcVector, DefaultConstruct)
 }
 TEST(HpcVector, ConstructWithCount)
 {
-    hpc::core::vector<int> v(5);
+    hpc::containers::vector<int> v(5);
     EXPECT_EQ(v.size(), 5u);
     for (auto& e : v) EXPECT_EQ(e, 0);
 }
 TEST(HpcVector, ConstructWithCountAndValue)
 {
-    hpc::core::vector<int> v(4, 42);
+    hpc::containers::vector<int> v(4, 42);
     EXPECT_EQ(v.size(), 4u);
     for (auto& e : v) EXPECT_EQ(e, 42);
 }
 TEST(HpcVector, InitializerListConstruct)
 {
-    hpc::core::vector<int> v{1, 2, 3, 4, 5};
+    hpc::containers::vector<int> v{1, 2, 3, 4, 5};
     EXPECT_EQ(v.size(), 5u);
     EXPECT_EQ(v[0], 1);
     EXPECT_EQ(v[4], 5);
@@ -35,105 +35,105 @@ TEST(HpcVector, InitializerListConstruct)
 TEST(HpcVector, IteratorRangeConstruct)
 {
     std::vector<int> src{10, 20, 30};
-    hpc::core::vector<int> v(src.begin(), src.end());
+    hpc::containers::vector<int> v(src.begin(), src.end());
     EXPECT_EQ(v.size(), 3u);
     EXPECT_EQ(v[0], 10);
     EXPECT_EQ(v[2], 30);
 }
 TEST(HpcVector, CopyConstruct)
 {
-    hpc::core::vector<int> a{1, 2, 3};
-    hpc::core::vector<int> b(a);
+    hpc::containers::vector<int> a{1, 2, 3};
+    hpc::containers::vector<int> b(a);
     EXPECT_EQ(a, b);
     a[0] = 99;
     EXPECT_NE(a, b);
 }
 TEST(HpcVector, MoveConstruct)
 {
-    hpc::core::vector<int> a{1, 2, 3};
-    hpc::core::vector<int> b(std::move(a));
+    hpc::containers::vector<int> a{1, 2, 3};
+    hpc::containers::vector<int> b(std::move(a));
     EXPECT_EQ(b.size(), 3u);
     EXPECT_TRUE(a.empty());
 }
 TEST(HpcVector, CopyAssign)
 {
-    hpc::core::vector<int> a{1, 2, 3};
-    hpc::core::vector<int> b;
+    hpc::containers::vector<int> a{1, 2, 3};
+    hpc::containers::vector<int> b;
     b = a;
     EXPECT_EQ(a, b);
 }
 TEST(HpcVector, MoveAssign)
 {
-    hpc::core::vector<int> a{4, 5, 6};
-    hpc::core::vector<int> b;
+    hpc::containers::vector<int> a{4, 5, 6};
+    hpc::containers::vector<int> b;
     b = std::move(a);
     EXPECT_EQ(b.size(), 3u);
     EXPECT_EQ(b[0], 4);
 }
 TEST(HpcVector, InitializerListAssign)
 {
-    hpc::core::vector<int> v;
+    hpc::containers::vector<int> v;
     v = {7, 8, 9};
     EXPECT_EQ(v.size(), 3u);
     EXPECT_EQ(v[1], 8);
 }
 TEST(HpcVector, AtBoundsCheck)
 {
-    hpc::core::vector<int> v{1, 2};
+    hpc::containers::vector<int> v{1, 2};
     EXPECT_EQ(v.at(0), 1);
     EXPECT_THROW(v.at(2), std::out_of_range);
 }
 TEST(HpcVector, FrontBack)
 {
-    hpc::core::vector<int> v{10, 20, 30};
+    hpc::containers::vector<int> v{10, 20, 30};
     EXPECT_EQ(v.front(), 10);
     EXPECT_EQ(v.back(), 30);
 }
 TEST(HpcVector, DataPointer)
 {
-    hpc::core::vector<int> v{1, 2, 3};
+    hpc::containers::vector<int> v{1, 2, 3};
     int* p = v.data();
     EXPECT_EQ(p[0], 1);
     EXPECT_EQ(p[2], 3);
 }
 TEST(HpcVector, ForwardIteration)
 {
-    hpc::core::vector<int> v{1, 2, 3};
+    hpc::containers::vector<int> v{1, 2, 3};
     int sum = 0;
     for (auto it = v.begin(); it != v.end(); ++it) sum += *it;
     EXPECT_EQ(sum, 6);
 }
 TEST(HpcVector, ReverseIteration)
 {
-    hpc::core::vector<int> v{1, 2, 3};
+    hpc::containers::vector<int> v{1, 2, 3};
     std::vector<int> rev(v.rbegin(), v.rend());
     EXPECT_EQ(rev[0], 3);
     EXPECT_EQ(rev[2], 1);
 }
 TEST(HpcVector, ConstIterators)
 {
-    const hpc::core::vector<int> v{4, 5, 6};
+    const hpc::containers::vector<int> v{4, 5, 6};
     int sum = 0;
     for (auto it = v.cbegin(); it != v.cend(); ++it) sum += *it;
     EXPECT_EQ(sum, 15);
 }
 TEST(HpcVector, RangeForLoop)
 {
-    hpc::core::vector<int> v{10, 20, 30};
+    hpc::containers::vector<int> v{10, 20, 30};
     int sum = 0;
     for (auto x : v) sum += x;
     EXPECT_EQ(sum, 60);
 }
 TEST(HpcVector, ReserveIncreasesCapacity)
 {
-    hpc::core::vector<int> v;
+    hpc::containers::vector<int> v;
     v.reserve(100);
     EXPECT_GE(v.capacity(), 100u);
     EXPECT_EQ(v.size(), 0u);
 }
 TEST(HpcVector, ShrinkToFit)
 {
-    hpc::core::vector<int> v;
+    hpc::containers::vector<int> v;
     v.reserve(128);
     v.push_back(1);
     v.push_back(2);
@@ -144,7 +144,7 @@ TEST(HpcVector, ShrinkToFit)
 }
 TEST(HpcVector, PushBackCopy)
 {
-    hpc::core::vector<int> v;
+    hpc::containers::vector<int> v;
     for (int i = 0; i < 100; ++i) v.push_back(i);
     EXPECT_EQ(v.size(), 100u);
     EXPECT_EQ(v[0], 0);
@@ -152,7 +152,7 @@ TEST(HpcVector, PushBackCopy)
 }
 TEST(HpcVector, PushBackMove)
 {
-    hpc::core::vector<std::string> v;
+    hpc::containers::vector<std::string> v;
     std::string s = "hello";
     v.push_back(std::move(s));
     EXPECT_EQ(v.size(), 1u);
@@ -160,7 +160,7 @@ TEST(HpcVector, PushBackMove)
 }
 TEST(HpcVector, EmplaceBack)
 {
-    hpc::core::vector<std::pair<int, std::string>> v;
+    hpc::containers::vector<std::pair<int, std::string>> v;
     v.emplace_back(1, "one");
     v.emplace_back(2, "two");
     EXPECT_EQ(v.size(), 2u);
@@ -169,14 +169,14 @@ TEST(HpcVector, EmplaceBack)
 }
 TEST(HpcVector, PopBack)
 {
-    hpc::core::vector<int> v{1, 2, 3};
+    hpc::containers::vector<int> v{1, 2, 3};
     v.pop_back();
     EXPECT_EQ(v.size(), 2u);
     EXPECT_EQ(v.back(), 2);
 }
 TEST(HpcVector, InsertAtBeginning)
 {
-    hpc::core::vector<int> v{2, 3, 4};
+    hpc::containers::vector<int> v{2, 3, 4};
     v.insert(v.begin(), 1);
     EXPECT_EQ(v.size(), 4u);
     EXPECT_EQ(v[0], 1);
@@ -184,7 +184,7 @@ TEST(HpcVector, InsertAtBeginning)
 }
 TEST(HpcVector, InsertInMiddle)
 {
-    hpc::core::vector<int> v{1, 2, 4, 5};
+    hpc::containers::vector<int> v{1, 2, 4, 5};
     v.insert(v.begin() + 2, 3);
     EXPECT_EQ(v.size(), 5u);
     EXPECT_EQ(v[2], 3);
@@ -192,14 +192,14 @@ TEST(HpcVector, InsertInMiddle)
 }
 TEST(HpcVector, InsertAtEnd)
 {
-    hpc::core::vector<int> v{1, 2};
+    hpc::containers::vector<int> v{1, 2};
     v.insert(v.end(), 3);
     EXPECT_EQ(v.size(), 3u);
     EXPECT_EQ(v.back(), 3);
 }
 TEST(HpcVector, EmplaceInMiddle)
 {
-    hpc::core::vector<std::pair<int, int>> v;
+    hpc::containers::vector<std::pair<int, int>> v;
     v.emplace_back(1, 10);
     v.emplace_back(3, 30);
     v.emplace(v.begin() + 1, 2, 20);
@@ -208,7 +208,7 @@ TEST(HpcVector, EmplaceInMiddle)
 }
 TEST(HpcVector, EraseSingle)
 {
-    hpc::core::vector<int> v{1, 2, 3, 4};
+    hpc::containers::vector<int> v{1, 2, 3, 4};
     auto it = v.erase(v.begin() + 1);
     EXPECT_EQ(v.size(), 3u);
     EXPECT_EQ(*it, 3);
@@ -218,7 +218,7 @@ TEST(HpcVector, EraseSingle)
 }
 TEST(HpcVector, EraseRange)
 {
-    hpc::core::vector<int> v{1, 2, 3, 4, 5};
+    hpc::containers::vector<int> v{1, 2, 3, 4, 5};
     v.erase(v.begin() + 1, v.begin() + 3);
     EXPECT_EQ(v.size(), 3u);
     EXPECT_EQ(v[0], 1);
@@ -227,14 +227,14 @@ TEST(HpcVector, EraseRange)
 }
 TEST(HpcVector, Clear)
 {
-    hpc::core::vector<int> v{1, 2, 3};
+    hpc::containers::vector<int> v{1, 2, 3};
     v.clear();
     EXPECT_TRUE(v.empty());
     EXPECT_GE(v.capacity(), 3u);
 }
 TEST(HpcVector, ResizeGrow)
 {
-    hpc::core::vector<int> v{1, 2};
+    hpc::containers::vector<int> v{1, 2};
     v.resize(5);
     EXPECT_EQ(v.size(), 5u);
     EXPECT_EQ(v[0], 1);
@@ -242,14 +242,14 @@ TEST(HpcVector, ResizeGrow)
 }
 TEST(HpcVector, ResizeShrink)
 {
-    hpc::core::vector<int> v{1, 2, 3, 4, 5};
+    hpc::containers::vector<int> v{1, 2, 3, 4, 5};
     v.resize(2);
     EXPECT_EQ(v.size(), 2u);
     EXPECT_EQ(v[1], 2);
 }
 TEST(HpcVector, ResizeWithValue)
 {
-    hpc::core::vector<int> v{1};
+    hpc::containers::vector<int> v{1};
     v.resize(4, 99);
     EXPECT_EQ(v.size(), 4u);
     EXPECT_EQ(v[0], 1);
@@ -257,8 +257,8 @@ TEST(HpcVector, ResizeWithValue)
 }
 TEST(HpcVector, Swap)
 {
-    hpc::core::vector<int> a{1, 2};
-    hpc::core::vector<int> b{3, 4, 5};
+    hpc::containers::vector<int> a{1, 2};
+    hpc::containers::vector<int> b{3, 4, 5};
     a.swap(b);
     EXPECT_EQ(a.size(), 3u);
     EXPECT_EQ(b.size(), 2u);
@@ -267,7 +267,7 @@ TEST(HpcVector, Swap)
 }
 TEST(HpcVector, AssignCountValue)
 {
-    hpc::core::vector<int> v{1, 2, 3};
+    hpc::containers::vector<int> v{1, 2, 3};
     v.assign(5, 7);
     EXPECT_EQ(v.size(), 5u);
     for (auto& e : v) EXPECT_EQ(e, 7);
@@ -275,30 +275,30 @@ TEST(HpcVector, AssignCountValue)
 TEST(HpcVector, AssignIteratorRange)
 {
     std::vector<int> src{10, 20, 30};
-    hpc::core::vector<int> v;
+    hpc::containers::vector<int> v;
     v.assign(src.begin(), src.end());
     EXPECT_EQ(v.size(), 3u);
     EXPECT_EQ(v[1], 20);
 }
 TEST(HpcVector, AssignInitializerList)
 {
-    hpc::core::vector<int> v;
+    hpc::containers::vector<int> v;
     v.assign({100, 200});
     EXPECT_EQ(v.size(), 2u);
     EXPECT_EQ(v[0], 100);
 }
 TEST(HpcVector, Equality)
 {
-    hpc::core::vector<int> a{1, 2, 3};
-    hpc::core::vector<int> b{1, 2, 3};
-    hpc::core::vector<int> c{1, 2, 4};
+    hpc::containers::vector<int> a{1, 2, 3};
+    hpc::containers::vector<int> b{1, 2, 3};
+    hpc::containers::vector<int> c{1, 2, 4};
     EXPECT_EQ(a, b);
     EXPECT_NE(a, c);
 }
 TEST(HpcVector, LessThan)
 {
-    hpc::core::vector<int> a{1, 2, 3};
-    hpc::core::vector<int> b{1, 2, 4};
+    hpc::containers::vector<int> a{1, 2, 3};
+    hpc::containers::vector<int> b{1, 2, 4};
     EXPECT_LT(a, b);
     EXPECT_GT(b, a);
     EXPECT_LE(a, a);
@@ -306,15 +306,15 @@ TEST(HpcVector, LessThan)
 }
 TEST(HpcVector, GrowthStress)
 {
-    hpc::core::vector<int> v;
+    hpc::containers::vector<int> v;
     constexpr int N = 10000;
     for (int i = 0; i < N; ++i) v.push_back(i);
     EXPECT_EQ(v.size(), static_cast<std::size_t>(N));
-    for (int i = 0; i < N; ++i) EXPECT_EQ(v[i], i);
+    for (int i = 0; i < N; ++i) EXPECT_EQ(v[static_cast<std::size_t>(i)], i);
 }
 TEST(HpcVector, StringType)
 {
-    hpc::core::vector<std::string> v;
+    hpc::containers::vector<std::string> v;
     v.push_back("hello");
     v.push_back("world");
     v.emplace_back("!!!");
@@ -325,7 +325,7 @@ TEST(HpcVector, StringType)
 }
 TEST(HpcVector, StdSort)
 {
-    hpc::core::vector<int> v{5, 3, 1, 4, 2};
+    hpc::containers::vector<int> v{5, 3, 1, 4, 2};
     std::sort(v.begin(), v.end());
     for (std::size_t i = 0; i < v.size(); ++i) {
         EXPECT_EQ(v[i], static_cast<int>(i + 1));
@@ -333,20 +333,20 @@ TEST(HpcVector, StdSort)
 }
 TEST(HpcVector, StdAccumulate)
 {
-    hpc::core::vector<int> v{1, 2, 3, 4, 5};
+    hpc::containers::vector<int> v{1, 2, 3, 4, 5};
     int sum = std::accumulate(v.begin(), v.end(), 0);
     EXPECT_EQ(sum, 15);
 }
 TEST(HpcVector, StdFind)
 {
-    hpc::core::vector<int> v{10, 20, 30, 40};
+    hpc::containers::vector<int> v{10, 20, 30, 40};
     auto it = std::find(v.begin(), v.end(), 30);
     EXPECT_NE(it, v.end());
     EXPECT_EQ(*it, 30);
 }
 TEST(HpcVector, MoveOnlyType)
 {
-    hpc::core::vector<std::unique_ptr<int>> v;
+    hpc::containers::vector<std::unique_ptr<int>> v;
     v.push_back(std::make_unique<int>(1));
     v.push_back(std::make_unique<int>(2));
     v.emplace_back(std::make_unique<int>(3));
@@ -362,7 +362,7 @@ TEST(HpcVector, OverAlignedType)
         bool operator==(const cache_line_aligned& o) const { return data[0] == o.data[0]; }
     };
 
-    hpc::core::vector<cache_line_aligned> v;
+    hpc::containers::vector<cache_line_aligned> v;
     for (int i = 0; i < 16; ++i) {
         cache_line_aligned obj{};
         obj.data[0] = static_cast<std::uint64_t>(i);
@@ -371,9 +371,29 @@ TEST(HpcVector, OverAlignedType)
 
     EXPECT_EQ(v.size(), 16u);
     for (int i = 0; i < 16; ++i) {
-        EXPECT_EQ(v[i].data[0], static_cast<std::uint64_t>(i));
+        EXPECT_EQ(v[static_cast<std::size_t>(i)].data[0], static_cast<std::uint64_t>(i));
         // Verify each element is actually aligned to 64 bytes.
-        EXPECT_EQ(reinterpret_cast<std::uintptr_t>(&v[i]) % 64, 0u);
+        EXPECT_EQ(reinterpret_cast<std::uintptr_t>(&v[static_cast<std::size_t>(i)]) % 64, 0u);
     }
 }
 
+
+// Regression: equality used memcmp, which is wrong for floating point.
+TEST(HpcVector, FloatEqualityUsesOperatorEq)
+{
+    hpc::containers::vector<double> a{0.0};
+    hpc::containers::vector<double> b{-0.0};
+    EXPECT_EQ(a, b);
+}
+
+// Regression: the argument may refer into the vector being reallocated.
+TEST(HpcVector, SelfReferencingInsertionsSurviveReallocation)
+{
+    hpc::containers::vector<std::string> v{"alpha", "beta"};
+    v.shrink_to_fit();
+    v.push_back(v[0]);
+    v.insert(v.begin(), v[1]);
+    v.emplace(v.begin() + 1, v.back());
+    hpc::containers::vector<std::string> expected{"beta", "alpha", "alpha", "beta", "alpha"};
+    EXPECT_EQ(v, expected);
+}
