@@ -8,6 +8,10 @@ add_executable(hpc_benchmarks
     bench_fixed_queue.cpp
     bench_fixed_stack.cpp
 )
+if(NOT WIN32)
+    target_sources(hpc_benchmarks PRIVATE bench_ipc.cpp)
+endif()
+
 target_link_libraries(hpc_benchmarks PRIVATE hpc::primitives benchmark::benchmark_main)
 hpc_configure_target(hpc_benchmarks)
 

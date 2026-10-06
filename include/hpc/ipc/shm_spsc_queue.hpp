@@ -12,37 +12,9 @@
 #include <type_traits>
 #include <utility>
 
+#include <hpc/ipc/shm_region.hpp>
+
 namespace hpc::ipc {
-
-// RAII POSIX shared-memory mapping (shm_open + mmap).
-class shm_region {
-public:
-    // Creates a new object, replacing any stale one with the same name. The
-    // creator unlinks the name on destruction.
-    static shm_region create(const std::string& name, std::size_t size);
-
-    // Maps an existing object in full.
-    static shm_region open(const std::string& name);
-
-    shm_region(shm_region&& other) noexcept;
-    shm_region& operator=(shm_region&& other) noexcept;
-    shm_region(const shm_region&)            = delete;
-    shm_region& operator=(const shm_region&) = delete;
-    ~shm_region();
-
-    [[nodiscard]] std::byte* data() const noexcept { return data_; }
-    [[nodiscard]] std::size_t size() const noexcept { return size_; }
-
-private:
-    shm_region(std::string name, std::byte* data, std::size_t size, bool owner) noexcept
-        : name_(std::move(name)), data_(data), size_(size), owner_(owner)
-    {}
-
-    std::string name_;
-    std::byte*  data_{nullptr};
-    std::size_t size_{0};
-    bool        owner_{false};
-};
 
 // Shared-memory layout. Offsets are fixed so that non-C++ readers can attach
 // (see examples/shm_subscriber.py); 128-byte spacing keeps head and tail on
@@ -108,7 +80,10 @@ public:
     [[nodiscard]] bool try_push(const T& value) noexcept
     {
         const std::uint64_t tail = header_->tail.load(std::memory_order_relaxed);
-        if (tail - header_->head.load(std::memory_order_acquire) == capacity_) return false;
+        if (tail - cached_head_ == capacity_) {
+            cached_head_ = header_->head.load(std::memory_order_acquire);
+            if (tail - cached_head_ == capacity_) return false;
+        }
         std::memcpy(slot(tail), &value, sizeof(T));
         header_->tail.store(tail + 1, std::memory_order_release);
         return true;
@@ -118,7 +93,10 @@ public:
     [[nodiscard]] bool try_pop(T& out) noexcept
     {
         const std::uint64_t head = header_->head.load(std::memory_order_relaxed);
-        if (head == header_->tail.load(std::memory_order_acquire)) return false;
+        if (head == cached_tail_) {
+            cached_tail_ = header_->tail.load(std::memory_order_acquire);
+            if (head == cached_tail_) return false;
+        }
         std::memcpy(&out, slot(head), sizeof(T));
         header_->head.store(head + 1, std::memory_order_release);
         return true;
@@ -132,6 +110,8 @@ private:
         , header_(reinterpret_cast<shm_queue_header*>(region_.data()))
         , slots_(region_.data() + sizeof(shm_queue_header))
         , capacity_(header_->capacity)
+        , cached_head_(header_->head.load(std::memory_order_acquire))
+        , cached_tail_(header_->tail.load(std::memory_order_acquire))
     {}
 
     static std::size_t bytes_for(std::size_t capacity) noexcept
@@ -148,6 +128,11 @@ private:
     shm_queue_header* header_;
     std::byte*        slots_;
     std::size_t       capacity_;
+    // Process-local copies of the other side's index, refreshed only when the
+    // queue looks full (producer) or empty (consumer). They keep the hot path
+    // off the other side's cache line and do not change the shared layout.
+    std::uint64_t cached_head_;
+    std::uint64_t cached_tail_;
 };
 
 } // namespace hpc::ipc

@@ -22,14 +22,18 @@ add_library(hpc_primitives
 )
 add_library(hpc::primitives ALIAS hpc_primitives)
 
-target_compile_features(hpc_primitives PUBLIC cxx_std_20)
+target_compile_features(hpc_primitives PUBLIC cxx_std_23)
 target_include_directories(hpc_primitives PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_link_libraries(hpc_primitives PUBLIC Threads::Threads)
 hpc_configure_target(hpc_primitives)
 
-# POSIX shared memory (not available on Windows).
+# IPC: POSIX shared memory, memory-mapped files and sockets (not on Windows).
 if(NOT WIN32)
-    target_sources(hpc_primitives PRIVATE src/ipc/shm_region.cpp)
+    target_sources(hpc_primitives PRIVATE
+        src/ipc/shm_region.cpp
+        src/ipc/mapped_file.cpp
+        src/ipc/socket.cpp
+    )
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(hpc_primitives PUBLIC rt)
     endif()

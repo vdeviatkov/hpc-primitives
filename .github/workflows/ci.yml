@@ -36,7 +36,7 @@ jobs:
         run: ctest --test-dir build --build-config ${{ matrix.build_type }} --output-on-failure --parallel 4
       - name: Benchmark smoke run
         if: matrix.build_type == 'Release' && runner.os != 'Windows'
-        run: ./build/benchmarks/hpc_benchmarks --benchmark_min_time=0.01s --benchmark_filter='Spsc|Lock|Arena'
+        run: ./build/benchmarks/hpc_benchmarks --benchmark_min_time=0.01s --benchmark_filter='Spsc|Lock|Arena|Ipc'
 
   sanitizers:
     name: sanitize / ${{ matrix.sanitizer }}

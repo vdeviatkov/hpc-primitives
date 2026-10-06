@@ -18,7 +18,12 @@ if(HPC_HAS_NUMA)
 endif()
 
 if(NOT WIN32)
-    target_sources(hpc_tests PRIVATE test_shm_spsc_queue.cpp)
+    target_sources(hpc_tests PRIVATE
+        test_shm_spsc_queue.cpp
+        test_shm_mpmc_queue.cpp
+        test_file_journal.cpp
+        test_socket.cpp
+    )
 endif()
 
 target_link_libraries(hpc_tests PRIVATE hpc::primitives GTest::gtest_main)

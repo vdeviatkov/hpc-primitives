@@ -1,6 +1,7 @@
-#include <hpc/ipc/shm_spsc_queue.hpp>
+#include <hpc/ipc/shm_region.hpp>
 
 #include <cerrno>
+#include <cstddef>
 #include <system_error>
 
 #include <fcntl.h>

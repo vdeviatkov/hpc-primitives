@@ -33,7 +33,9 @@ on Apple Silicon, this queue is slower than `std::mutex` + `std::queue`,
 because cross-cluster CAS is expensive and the mutex parks waiters. Neither
 padding slots onto separate cache lines nor CAS backoff changed that. Use
 it when threads do real work between operations, or when you need bounded
-memory and no syscalls. Do not use it for an 8-thread ping-pong.
+memory and no syscalls. Do not use it for an 8-thread ping-pong on Apple
+Silicon. On a Ryzen 9 9950X the same 4P/4C test goes the other way:
+`mpmc_queue` runs at 19 M/s against 9.3 M/s for the mutex.
 
 **No unbounded MPMC.** A linked-segment MPMC queue needs safe memory
 reclamation (hazard pointers or epochs) before a consumer can free a drained
@@ -71,7 +73,10 @@ the point:
 - A default-constructed or moved-from `deque<T>` owns no memory. The chunk
   map is allocated on first insertion.
 
-## Shared-memory IPC
+## IPC
+
+Usage, layouts and benchmark numbers for every transport are in
+[ipc.md](ipc.md). This section covers the shared-memory design.
 
 `shm_spsc_queue<T>` has a fixed layout, documented in
 [`shm_spsc_queue.hpp`](../include/hpc/ipc/shm_spsc_queue.hpp), so that
@@ -91,3 +96,20 @@ half-initialized or incompatible queue. Head and tail are lock-free
 processes. `T` must be trivially copyable and pointer-free.
 [`examples/shm_subscriber.py`](../examples/shm_subscriber.py) consumes from
 Python with only the standard library.
+
+Unlike the in-process `spsc_queue`, the shared-memory SPSC queue keeps shared
+`head`/`tail` counters, because external readers depend on that layout. Each
+handle caches the other side's counter and re-reads it only when the queue
+looks full or empty. Without that cache, every push read `head` and every pop
+read `tail`, the two cache lines bounced on every operation, and throughput
+on an M4 Max was 20 M/s instead of 110 M/s.
+
+`shm_mpmc_queue<T>` is the cross-process version of `mpmc_queue`: the same
+sequence-per-slot algorithm, with 64-bit positions and a fixed layout. It is
+lock-free but not crash-safe: a process that dies between its CAS and its
+publishing store leaves a slot that never becomes ready.
+
+`file_journal<T>` gives up bounded memory in exchange for history. Nothing is
+overwritten, so the writer never waits for readers, and readers need no
+shared state beyond `committed`. The writer publishes each record with a
+release store after copying it, so a crash cannot expose a torn record.
