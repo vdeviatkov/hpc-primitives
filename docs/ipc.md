@@ -281,6 +281,118 @@ AMD Ryzen 9 9950X (GCC 13.3, Ubuntu 24.04, kernel 7.0).
 | Unix-domain socket | 4.7 µs | 2.5 µs |
 | TCP loopback, `TCP_NODELAY` | 14.1 µs | 3.6 µs |
 
+**Bandwidth vs message size** (Ryzen 9950X, glibc 2.39). The tables above
+use 64-byte messages, so they count messages, not bytes. Larger messages
+reach tens of GB/s.
+
+Method: every cell is the median of 5 runs, each in a fresh process, with
+the range in brackets. Where two settings are compared, they alternate run
+by run so both see the same machine state. The consumer runs on CPU 0 and
+the producer on CPU 1 (same CCD) or CPU 8 (other CCD). Each side copies
+every message through its own page-aligned buffer, and the consumer polls
+again immediately when the queue is empty, unless noted. Shared-memory
+figures use glibc with `rep movsb` disabled, because the default is
+unstable on this machine (see below). The ring holds 4096 slots, capped at
+16 MiB.
+
+| Message | `shm_spsc_queue`, same CCD | `shm_spsc_queue`, across CCDs | Unix socket, same CCD | Unix socket, across CCDs |
+|---|---|---|---|---|
+| 8 B | 1.2 GB/s (146 M msgs/s) | 0.4 GB/s (45 M/s) | 0.03 GB/s (4.2 M/s) | 0.01 GB/s (1.5 M/s) |
+| 64 B | 7.2 GB/s (112 M/s) | 1.8 GB/s (28 M/s) | 0.3 GB/s (4.4 M/s) | 0.1 GB/s (1.5 M/s) |
+| 256 B | 15.7 GB/s (61 M/s) | 3.6 GB/s (14 M/s) | 1.0 GB/s (3.8 M/s) | 0.3 GB/s (1.2 M/s) |
+| 1 KiB | 120 GB/s [113–126] | 6.1 GB/s | 3.7 GB/s | 1.3 GB/s |
+| 4 KiB | 110 GB/s [106–122] | 10.7 GB/s | 12.1 GB/s | 3.8 GB/s |
+| 64 KiB (256 slots) | 73 GB/s [72.5–73.8] | 11.1 GB/s | 30 GB/s | 8.7 GB/s |
+| 1 MiB (16 slots) | 67 GB/s [66–68] | 11.4 GB/s | 34 GB/s [33–35] | 10.9 GB/s |
+
+Ring size, for large messages, with glibc defaults vs `rep movsb` disabled:
+
+| Message | Ring | Same CCD, default | Same CCD, `rep movsb` off | Across CCDs, default | Across CCDs, off |
+|---|---|---|---|---|---|
+| 64 KiB | 1 MiB | 73.5 [43–76] | 53.5 [53.3–55.0] | 14.5 [12.2–15.8] | 10.8 |
+| 64 KiB | 4 MiB | 79.2 [33.5–79.3] | 76.9 [76.5–77.1] | 17.1 [11.2–17.1] | 11.0 |
+| 64 KiB | 16 MiB | 72.9 [41.4–74.0] | 72.8 [72.2–73.2] | 11.3 [11.2–14.7] | 11.1 |
+| 64 KiB | 64 MiB | 20.5 | 19.5 | 14.9 | 14.1 |
+| 64 KiB | 256 MiB | 16.4 | 15.9 | 11.8 | 11.8 |
+| 1 MiB | 1 MiB (1 slot) | 38.0 | 38.2 | 9.3 | 9.3 |
+| 1 MiB | 4 MiB | 73.4 | 73.5 | 11.4 | 11.4 |
+| 1 MiB | 16 MiB | 67.4 | 67.8 | 12.8 | 12.9 |
+| 1 MiB | 64 MiB | 17.8 | 17.9 | 14.7 | 14.7 |
+| 1 MiB | 256 MiB | 12.5 | 12.5 | 12.3 | 12.3 |
+
+All values in GB/s. Consumer backoff, small messages, same CCD, 4096
+slots, alternating:
+
+| Message | Consumer polls again at once | Consumer pauses 256× `pause` when empty |
+|---|---|---|
+| 8 B | 145 M msgs/s | 336 M msgs/s |
+| 64 B | 109 M msgs/s | 328 M msgs/s |
+| 256 B | 61 M msgs/s | 148 M msgs/s |
+
+For reference, one core's `memcpy` runs at 120 GB/s within L1 and 19 GB/s
+from DRAM.
+
+A CCD (core complex die) is one of the chiplets an AMD Ryzen or EPYC CPU is
+built from. The 9950X has two, each with 8 cores (16 threads) and its own
+32 MiB L3. No L3 is shared between them. On this machine CPUs 0–7 and 16–23
+sit on CCD 0, and 8–15 and 24–31 on CCD 1 (`lscpu -e=CPU,CORE,CACHE` shows
+the L3 id). The two CCDs talk through the Infinity Fabric on a separate I/O
+die, which is much slower than a shared L3.
+
+What the numbers say:
+
+- **Small messages are bound by per-message cost, not bandwidth.** Every
+  message is a slot handoff between two cores.
+- **For small messages, let the producer get ahead.** A consumer that
+  polls again the instant it finds the queue empty chases the producer
+  through the ring, pulling each cache line across as soon as it is
+  written. Pausing (here 256 `pause` instructions) before polling again
+  lets the producer run ahead, and the consumer then drains a batch:
+  2.3–3× more messages per second at 8–256 B. The price is latency; a
+  consumer that is pausing reacts late to the next message. It made no
+  difference at 1 KiB and 64 KiB.
+- **Up to the L3 size, the handoff runs at cache speed.** When the ring
+  fits in the L3 both cores share, the consumer reads the producer's data
+  from that L3 at 67–120 GB/s, faster than DRAM. A ring larger than the L3
+  (64 MiB or more here) spills to DRAM and drops to 12–20 GB/s. Size the
+  ring to fit: slots × message size of a few MiB, at most 16 MiB here.
+- **Give the ring more than one slot.** With one 1 MiB slot, the producer
+  waits while the consumer copies, and the rate halves (38 against 73 GB/s
+  with 4 slots).
+- **Keep both processes on one CCD.** Across CCDs every cache line crosses
+  the Infinity Fabric. Small messages get 3–4.5× slower, and 1 KiB–1 MiB
+  messages lose 6–20× in bandwidth. Once the ring is too big for L3, both
+  cases are DRAM-bound and the gap shrinks to 1.0–1.4×. Pin both ends to
+  the same CCD (on Linux, `taskset`, or
+  `hpc::support::pin_current_thread`).
+- **Sockets are bound by system calls.** A Unix socket manages about
+  4 M `send` calls per second on one CCD and 1.2–1.5 M across CCDs for
+  messages up to 256 B, and 3.0–3.6 M per second at 1–4 KiB; beyond that
+  the copy dominates. With 64 KiB–1 MiB per `send` that becomes 30–34 GB/s,
+  about half of shared memory with an L3-sized ring. Across CCDs, large-message
+  sockets (8.7–10.9 GB/s) come close to shared memory (11.1–11.4 GB/s).
+- **glibc's `rep movsb` is unstable on this machine.** glibc's `memcpy`
+  switches to the `rep movsb` instruction at 2112 bytes. With that default,
+  4 KiB and 64 KiB same-CCD runs occasionally drop to 24–65 GB/s, and
+  these slow episodes last for minutes. With `rep movsb` disabled
+  (`GLIBC_TUNABLES=glibc.cpu.x86_rep_movsb_threshold=0xffffffff`, so glibc
+  uses vector loads and stores), every same-CCD cell was stable, run after
+  run. Disabling it is not free, though: `rep movsb` was faster for 64 KiB
+  across CCDs (14.5–17.1 against 10.8–11.0 GB/s), and for 64 KiB messages
+  on a 1 MiB ring (73.5 against 53.5 GB/s). Use the tunable for steady same-CCD throughput
+  at 4–64 KiB; otherwise keep the default. 1 MiB messages showed no
+  difference.
+- **Open questions.** What triggers the `rep movsb` slow episodes is not
+  known. Finding out needs CPU performance counters, which this machine
+  blocks for normal users (`kernel.perf_event_paranoid=4`). In earlier,
+  shorter runs, 1 KiB messages (which do not use `rep movsb`) also
+  sometimes ran at about 65 instead of 123 GB/s for a whole process. That
+  did not recur in the runs above, and its cause is also unknown. The
+  following did not explain either effect when tested run by run: the page
+  offset of the copy buffers or of the ring slots, `shm_open` memory versus
+  anonymous memory, transparent huge pages, false sharing between the two
+  queue handles, and consumer backoff.
+
 How to read these numbers:
 
 - Shared memory is 25–120× faster than a socket on the same machine, since
