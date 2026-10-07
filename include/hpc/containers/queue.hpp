@@ -10,13 +10,27 @@
 
 namespace hpc::containers {
 
-// Growable FIFO queue on a contiguous circular buffer. Same interface as
-// std::queue, but a single allocation instead of std::deque's chunk map, so
-// steady-state push/pop never allocates and iteration is cache-friendly.
+// Growable FIFO queue on one contiguous circular buffer, with the std::queue
+// interface. std::queue sits on std::deque, which allocates and frees chunks
+// as the queue moves forward; this queue never allocates in steady state.
 //
-//  - Capacity is a power of two; wrap-around is a mask.
-//  - 2x growth. Relocation unrolls the ring so that head is at slot 0.
-//  - push/emplace are safe when the argument aliases an element of the queue.
+// Data layout: buf_ (a heap ring whose capacity cap_ is a power of two),
+// head_ (slot of the front element) and size_.
+//
+// How it works
+//   - push: construct at buf_[(head_ + size_) & (cap_ - 1)] and ++size_.
+//   - pop: destroy buf_[head_], set head_ = (head_ + 1) & (cap_ - 1), and
+//     --size_.
+//   - When the ring is full, allocate 2x the capacity (8 to start). Construct
+//     the new element at its final slot first, so q.push(q.front()) is safe.
+//     Then relocate the ring unrolled, [head_, cap_) followed by [0, tail), so
+//     the front lands at slot 0 and head_ resets to 0. Relocation moves
+//     elements, or copies them if T's move can throw (strong guarantee).
+//   - Known cost: push and pop both read-modify-write size_. When the queue
+//     lives in memory rather than registers, each operation waits for a
+//     store-to-load forward of size_ from the previous one. That makes it
+//     about 3x slower than libstdc++'s std::queue on Zen 5. Tracking head and
+//     tail instead would remove that dependency.
 template <class T>
 class queue {
 public:

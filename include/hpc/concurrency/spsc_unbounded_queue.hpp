@@ -11,18 +11,32 @@
 
 namespace hpc::concurrency {
 
-// Unbounded single-producer / single-consumer queue built from a linked list
-// of fixed-size segments. push() never fails (it allocates a new segment when
-// the current one is full); try_pop() is wait-free.
+// Unbounded single-producer / single-consumer queue built from a singly linked
+// list of fixed-size segments. push() never fails; try_pop() is wait-free.
 //
-//  - The producer owns the tail segment, the consumer owns the head segment.
-//    Shared state per segment is `written` (element count, release-stored by
-//    the producer after each construction) and `next` (release-stored once
-//    when the producer moves on).
-//  - The consumer frees a segment only after it has consumed all of it and
-//    observed `next`; the producer never touches a segment after linking its
-//    successor, so no further reclamation scheme is needed.
-//  - SegmentSize defaults to ~4 KiB of elements.
+// Data layout
+//   - segment = { atomic written; atomic next; raw storage for SegmentSize Ts }.
+//     SegmentSize defaults to about 4 KiB of elements (at least 8).
+//   - Producer-owned: tail_seg_ (the segment being filled) and tail_pos_ (its
+//     next free slot). Consumer-owned: head_seg_, head_pos_ and written_cache_.
+//     The two groups sit on separate cache lines.
+//
+// How it works
+//   - push: if the tail segment is full, allocate a new one, release-store it
+//     into tail_seg_->next and continue in it. Placement-new the element at
+//     tail_pos_, then release-store written = ++tail_pos_, which publishes it.
+//   - front: when head_pos_ catches up with written_cache_, refresh the cache
+//     with an acquire load of `written`. The consumer touches the shared
+//     counter only after it has used up every element it already knew about.
+//     When the segment is exhausted (head_pos_ == SegmentSize), acquire-load
+//     `next`. If there is a next segment, delete the old one and continue.
+//   - pop: destroy the element and ++head_pos_, with no shared write.
+//   - Reclamation is trivial. The producer never touches a segment after
+//     linking its successor, and the consumer deletes a segment only after
+//     consuming all of it and seeing `next`, so no hazard pointers or epochs
+//     are needed.
+//   - Cost: one new/delete per SegmentSize elements, and memory is unbounded
+//     if the consumer falls behind.
 template <class T, std::size_t SegmentSize = std::max<std::size_t>(4096 / sizeof(T), 8)>
 class spsc_unbounded_queue {
     static_assert(SegmentSize >= 1);

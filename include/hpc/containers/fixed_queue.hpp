@@ -10,11 +10,25 @@
 namespace hpc::containers {
 
 // Fixed-capacity FIFO queue on an inline circular buffer: no heap allocation.
+// Capacity is a compile-time constant and the queue never grows. The buffer
+// lives inside the object, on the stack or embedded in another struct.
 //
-//  - Storage is exactly Capacity slots; wrap-around is a compare-and-subtract,
-//    so Capacity need not be a power of two.
-//  - try_push / try_emplace / try_pop report full/empty by return value;
-//    push / emplace / pop throw std::overflow_error / std::underflow_error.
+// Data layout: storage_ (raw bytes for Capacity Ts, aligned for T), head_
+// (slot of the front element) and size_.
+//
+// How it works
+//   - push: construct at slot wrap(head_ + size_) and ++size_.
+//   - pop: destroy slot head_, set head_ = wrap(head_ + 1), and --size_.
+//   - wrap(i) is `i >= Capacity ? i - Capacity : i`, a compare and subtract,
+//     so Capacity need not be a power of two.
+//   - Unused slots are raw memory, so empty capacity runs no constructors.
+//   - try_push / try_emplace / try_pop report full or empty by their return
+//     value (noexcept when T's operation is). push / emplace / pop throw
+//     std::overflow_error / std::underflow_error instead.
+//   - Copy and move go element by element, so both are O(n). With the buffer
+//     inside the object, a move has no pointer to steal.
+//   - Known cost: the same head_ + size_ dependency chain as
+//     hpc::containers::queue.
 template <class T, std::size_t Capacity>
 class fixed_queue {
     static_assert(Capacity > 0, "Capacity must be greater than zero");

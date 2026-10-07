@@ -45,8 +45,26 @@ static_assert(offsetof(shm_mpmc_header, head) == 256);
 static_assert(sizeof(shm_mpmc_header) == 384);
 
 // Bounded lock-free multi-producer / multi-consumer queue between processes.
-// T must be trivially copyable and contain no pointers; all sides must agree
-// on its layout.
+// T must be trivially copyable and contain no pointers, and all sides must
+// agree on its layout.
+//
+// How it works
+//   - The algorithm is hpc::concurrency::mpmc_queue (Vyukov) placed in shared
+//     memory. Each slot is { atomic<u64> seq; T value; }, and slot i starts
+//     with seq = i.
+//   - create(): build the header, initialize every slot's seq, then
+//     release-store `magic` last. open() acquire-loads `magic` and checks
+//     sizeof(T), the slot stride and the region size.
+//   - try_push: load tail into pos and look at slot(pos).seq. If it equals
+//     pos, CAS tail from pos to pos + 1; the winner memcpys the value in and
+//     release-stores seq = pos + 1. If it is less than pos, the queue is full.
+//     If it is greater, another producer took pos, so reload and retry.
+//   - try_pop mirrors this on head. It needs seq == pos + 1, CASes head,
+//     memcpys the value out, then release-stores seq = pos + capacity to free
+//     the slot for the next lap.
+//   - Positions are 64-bit, so there is no ABA. The 64-bit atomics are
+//     lock-free and address-free, which is what makes them valid across
+//     processes.
 //
 // Lock-free, not crash-safe: a process that dies between claiming a position
 // and publishing its slot leaves that slot permanently busy, and the queue

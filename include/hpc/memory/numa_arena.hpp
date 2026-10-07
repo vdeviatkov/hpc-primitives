@@ -9,8 +9,20 @@ namespace hpc::memory {
 // Arena whose backing memory is placed on a specific NUMA node via libnuma.
 // Only available when built with HPC_HAS_NUMA=1 (Linux + libnuma).
 //
-// If the kernel reports NUMA as unavailable (e.g. restricted containers),
-// falls back to regular heap memory and node() returns -1.
+// How it works
+//   - The constructor takes one block from numa_alloc_onnode(capacity, node).
+//     That memory is page-aligned and bound to the node with MPOL_BIND, so its
+//     pages are allocated on that node when first touched.
+//   - node < 0 picks the node of the CPU the calling thread runs on
+//     (sched_getcpu + numa_node_of_cpu).
+//   - A plain `arena` over that block hands out memory, so allocate() costs
+//     the same as arena's bump pointer.
+//   - The destructor returns the block with numa_free.
+//   - If the kernel reports NUMA as unavailable (e.g. in a restricted
+//     container), it falls back to ::operator new memory and node() returns
+//     -1.
+//   - Binding through libnuma is the reliable route: mbind() on operator new
+//     memory fails when the address is not page-aligned.
 class numa_arena {
 public:
     // node < 0 selects the node of the calling thread. Throws std::bad_alloc.

@@ -36,17 +36,31 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
 static_assert(offsetof(journal_header, committed) == 128);
 static_assert(sizeof(journal_header) == 256);
 
-// Append-only log of fixed-size records in a memory-mapped file: one writer,
-// any number of readers in any number of processes, each reading at its own
-// pace. Records are never overwritten, so a slow reader cannot lose data and
-// a reader started later can replay from the beginning. The file persists
-// after every process exits.
+// Append-only log of fixed-size records in a memory-mapped file. One writer
+// and any number of readers, in any number of processes, each reading at its
+// own pace. T must be trivially copyable and contain no pointers.
 //
-// The writer copies a record, then publishes it with a release store to
-// `committed`. If the writer dies mid-append, readers still see a consistent
-// prefix, and reopening the file resumes appending after it.
-//
-// T must be trivially copyable and contain no pointers.
+// How it works
+//   - The file is a 256-byte header followed by a plain array of T (layout
+//     above). It is mapped with mapped_file, so writer and readers share the
+//     same page-cache pages.
+//   - create(): size the file for `capacity` records, write the header, and
+//     release-store `magic` last. open() acquire-loads `magic` and checks
+//     sizeof(T) and the file size.
+//   - try_append (writer only): n = committed; if n == capacity, the file is
+//     full. Otherwise memcpy the record into records[n], then release-store
+//     committed = n + 1, which publishes it.
+//   - size() acquire-loads `committed`. try_read(i) returns record i only if
+//     i < committed. Readers keep their own index and share no state with
+//     each other or with the writer, beyond reading `committed`.
+//   - Records are never overwritten, so a slow reader cannot lose data, and a
+//     reader started later can replay from record 0. When the file is full,
+//     roll over to a new one.
+//   - Crash consistency: `committed` advances only after the record is fully
+//     written. A writer that dies mid-append leaves a consistent prefix, and
+//     open() followed by try_append resumes after it.
+//   - flush() msyncs the committed records for durability against power loss.
+//     Other processes do not need it to see new records.
 template <class T>
 class file_journal {
     static_assert(std::is_trivially_copyable_v<T>);

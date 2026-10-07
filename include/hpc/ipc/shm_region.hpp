@@ -6,7 +6,21 @@
 
 namespace hpc::ipc {
 
-// RAII POSIX shared-memory mapping (shm_open + mmap).
+// RAII POSIX shared-memory mapping.
+//
+// How it works
+//   - create(name, size): shm_open(O_CREAT | O_EXCL) names a new memory
+//     object. If the name exists from a crashed run, it is unlinked and
+//     created again. ftruncate sizes the object (zero-filled), and
+//     mmap(MAP_SHARED) maps it. The descriptor is closed right after mapping,
+//     since the mapping stays valid without it.
+//   - open(name): shm_open an existing object, read its size with fstat, and
+//     map all of it.
+//   - Every process that maps the same name sees the same physical pages, so
+//     writes become visible to the others under the usual atomic and
+//     memory-order rules.
+//   - The creator owns the name and unlinks it on destruction. Processes that
+//     already have it mapped keep working, but no new process can open it.
 class shm_region {
 public:
     // Creates a new object, replacing any stale one with the same name. The

@@ -11,15 +11,32 @@
 
 namespace hpc::containers {
 
-// Contiguous growable array with the std::vector interface (minus allocator
-// support and bool specialisation).
+// Contiguous growable array with the std::vector interface, minus allocator
+// support and the bool specialisation.
 //
-//  - 2x geometric growth, first allocation 4 elements.
-//  - Relocation uses std::uninitialized_move/copy, which lower to memmove for
-//    trivially copyable T. Types with a throwing move constructor are copied
-//    on growth (std::move_if_noexcept semantics), giving the strong guarantee.
-//  - push_back/emplace_back/insert are safe when the argument aliases an
-//    element of the vector itself.
+// Data layout: data_ (heap buffer from std::allocator), size_ (constructed
+// elements) and cap_ (allocated slots). Slots [size_, cap_) are raw memory.
+// Iterators are raw pointers.
+//
+// How it works
+//   - push_back / emplace_back: if size_ < cap_, construct at data_[size_]
+//     and ++size_. Otherwise grow; capacity doubles, starting at 4 elements.
+//   - Growth constructs the new element in the *new* buffer first, then
+//     relocates the old elements and destroys and frees the old buffer.
+//     Building the new element first makes v.push_back(v[0]) safe, because
+//     the argument is still alive while it is read.
+//   - Relocation uses std::uninitialized_move, which becomes memmove for
+//     trivially copyable T. If T's move constructor can throw and T is
+//     copyable, elements are copied instead (std::move_if_noexcept), so a
+//     failed growth leaves the vector unchanged (the strong guarantee).
+//   - insert in the middle: build the value in a temporary first, since it may
+//     alias an element, and grow if needed. Move-construct the last element
+//     one slot to the right, std::move_backward the rest, then move-assign the
+//     temporary into the gap. erase shifts the tail left with std::move and
+//     destroys the leftover end.
+//   - Compared with libc++: libc++ relocates types it marks trivially
+//     relocatable (e.g. std::string) with memcpy. This vector moves them one
+//     by one, so vector<std::string> grows about 2x slower than libc++'s.
 template <class T>
 class vector {
 public:

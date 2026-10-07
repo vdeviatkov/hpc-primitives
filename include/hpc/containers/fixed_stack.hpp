@@ -10,12 +10,23 @@
 namespace hpc::containers {
 
 // Fixed-capacity LIFO stack with inline storage: no heap allocation, ever.
+// Capacity is a compile-time constant and the stack never grows. The buffer
+// lives inside the object, on the stack or embedded in another struct.
 //
-//  - try_push / try_emplace / try_pop report full/empty by return value and
-//    are noexcept when T's corresponding operation is; push / emplace / pop
-//    throw std::overflow_error / std::underflow_error instead.
-//  - Slots are raw storage, so unused capacity costs no constructor calls.
-
+// Data layout: storage_ (raw bytes for Capacity Ts, aligned for T) and size_.
+//
+// How it works
+//   - push: bounds check, then construct at slot[size_++].
+//   - pop: --size_, then destroy slot[size_]; the destroy is skipped for
+//     trivially destructible T.
+//   - top(): slot[size_ - 1].
+//   - Unused slots are raw memory, so empty capacity runs no constructors, and
+//     clear() is O(1) for trivially destructible T.
+//   - try_push / try_emplace / try_pop report full or empty by their return
+//     value (noexcept when T's operation is). push / emplace / pop throw
+//     std::overflow_error / std::underflow_error instead.
+//   - Copy, move and swap go element by element, so all are O(n). With the
+//     buffer inside the object, a move has no pointer to steal.
 template <class T, std::size_t Capacity>
 class fixed_stack {
     static_assert(Capacity > 0, "Capacity must be greater than zero");

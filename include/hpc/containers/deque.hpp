@@ -11,15 +11,39 @@
 
 namespace hpc::containers {
 
-// Double-ended queue: fixed-size chunks (~512 bytes) indexed by a central map
-// of chunk pointers, the classic std::deque layout.
+// Double-ended queue with the classic std::deque layout: fixed-size chunks
+// indexed by a central map of chunk pointers.
 //
-//  - Elements never move once constructed, so push/pop at either end keep
-//    references to other elements valid (iterators are invalidated by push).
-//  - Invariant once allocated: finish_.cur_ always points at a valid slot,
-//    so the chunk after the last element is allocated eagerly.
-//  - Default construction and moved-from state allocate nothing; the map is
-//    created on first insertion.
+// Data layout
+//   - Chunk: raw storage for chunk_elems elements (about 512 bytes, at least
+//     1 element).
+//   - Map: a heap array of T* (map_, map_size_), one entry per chunk, kept
+//     with spare entries at both ends. It starts with 8 entries and one chunk
+//     in the middle.
+//   - start_ / finish_: iterators {cur, first, last, node} for the first
+//     element and one past the last. `node` points into the map, and
+//     [first, last) is that node's chunk.
+//
+// How it works
+//   - push_back: if finish_.cur_ is not the last slot of its chunk, construct
+//     there and ++cur. Otherwise construct in that last slot, allocate the
+//     next chunk and step finish_ into it, so finish_.cur_ always points at a
+//     valid slot. push_front is the mirror image at start_.
+//   - pop_front / pop_back: destroy the element and move cur. A chunk is
+//     freed as soon as it empties; there is no spare-chunk cache. Push and pop
+//     at one end touch only that end's iterator.
+//   - When the map runs out of entries on one side, there are two cases. If
+//     the map is more than twice the number of chunks in use, the chunk
+//     pointers slide back to its centre. Otherwise a larger map is allocated
+//     (size + max(size, needed) + 2) and the pointers are copied into its
+//     middle. Elements themselves never move.
+//   - Indexing (operator[], iterator +=): add the offset to cur. If the result
+//     leaves the chunk, divide by chunk_elems to get the chunk step and the
+//     slot within it. That costs more than vector indexing.
+//   - Because elements never move, push/pop at either end keeps references to
+//     other elements valid. Iterators are invalidated by push.
+//   - Default construction and the moved-from state allocate nothing; the map
+//     is created on first insertion.
 template <class T>
 class deque {
 

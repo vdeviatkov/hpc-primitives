@@ -16,16 +16,31 @@ namespace hpc::concurrency {
 // Bounded lock-free multi-producer / multi-consumer queue (Dmitry Vyukov's
 // sequence-slot design).
 //
-//  - Every slot carries a sequence number. For position `pos`, a slot with
-//    seq == pos is free for the producer that claims pos; seq == pos + 1
-//    holds an element for the consumer that claims pos. After consuming, the
-//    slot is re-armed for the next lap with seq = pos + capacity.
-//  - Producers claim a position by CAS on tail_, consumers by CAS on head_.
-//    The CAS only reserves a position; the release store to slot.seq
-//    publishes the data and pairs with the acquire load on the other side.
-//  - Positions are 64-bit and never wrap in practice, so there is no ABA.
-//  - Not linearizable as a whole: try_pop can fail while a producer that
-//    claimed an earlier position is still writing its element.
+// Data layout
+//   - Heap array of `capacity` slots (a power of two, at least 2), each
+//     { atomic<size_t> seq; raw storage for T }.
+//   - Shared counters: tail_ (claimed by producers) and head_ (claimed by
+//     consumers), each on its own 128-byte line.
+//
+// How it works
+//   - Slot i starts with seq = i. For position pos, seq == pos means free for
+//     the producer that claims pos, and seq == pos + 1 means it holds the
+//     element for the consumer that claims pos.
+//   - try_push: load tail_ into pos, then look at slot(pos).seq:
+//       == pos : CAS tail_ from pos to pos + 1. The winner constructs T in the
+//                slot, then release-stores seq = pos + 1 to publish it. A loser
+//                retries with the value its failed CAS returned.
+//       <  pos : the slot still holds the previous lap's element: full.
+//       >  pos : another producer already took pos; reload tail_ and retry.
+//   - try_pop mirrors this on head_. It needs seq == pos + 1, CASes head_,
+//     moves the element out and destroys it, then release-stores
+//     seq = pos + capacity to free the slot for the producer's next lap.
+//   - The CAS only reserves a position. The release store to seq is what hands
+//     the data over, and it pairs with the acquire load on the other side.
+//   - Positions are 64-bit and never wrap in practice, so there is no ABA.
+//   - Lock-free but not wait-free: under contention a CAS can lose and retry.
+//   - Not linearizable as a whole: try_pop can report empty while a producer
+//     that claimed an earlier position is still writing its element.
 template <class T>
 class mpmc_queue {
     static_assert(std::is_nothrow_destructible_v<T>);

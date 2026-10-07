@@ -8,18 +8,30 @@
 
 namespace hpc::concurrency {
 
-// Test-and-test-and-set spinlock with bounded exponential backoff.
-// Satisfies Lockable, so it works with std::scoped_lock / std::unique_lock.
+// Test-and-test-and-set spinlock with bounded exponential backoff. Satisfies
+// Lockable, so it works with std::scoped_lock and std::unique_lock.
 //
-//  - Uncontended path is a single exchange.
-//  - Under contention, waiters spin on a relaxed load, which hits their local
-//    cache until the owner's release store invalidates it, instead of
-//    hammering the line with read-for-ownership requests.
-//  - Backoff doubles up to 64 pause instructions, then falls back to
-//    std::this_thread::yield() so an oversubscribed system still progresses.
+// State: a single atomic<bool> locked_. There is no waiter queue and no
+// fairness.
 //
-// For very short critical sections only. Place it on its own cache line if
-// neighbouring data is written by other threads.
+// How it works
+//   - lock(): exchange(true, acquire). If it returns false, the caller owns
+//     the lock, so the uncontended path is one atomic instruction.
+//   - Otherwise, spin on a relaxed *load* (the "test" before the next
+//     test-and-set). The line stays shared in the waiter's cache until the
+//     owner's unlock invalidates it. Spinning on the exchange instead would
+//     issue a read-for-ownership on every attempt and bounce the line between
+//     waiters.
+//   - Between loads, back off 1, 2, 4 ... 64 pause instructions. Past that,
+//     call std::this_thread::yield(), so an oversubscribed system still makes
+//     progress. When the load sees false, retry the exchange.
+//   - try_lock(): a relaxed load first, then the exchange only if the lock
+//     looks free.
+//   - unlock(): a release store of false.
+//
+// For very short critical sections only. It is unfair, and once many threads
+// contend it loses to std::mutex, which puts waiters to sleep. Place it on its
+// own cache line if neighbouring data is written by other threads.
 class ttas_spinlock {
 public:
     void lock() noexcept

@@ -32,8 +32,11 @@ inline void cpu_relax() noexcept
 #endif
 }
 
-// Pins the calling thread to a logical CPU. Returns false on failure or where
-// the OS has no hard affinity API (macOS).
+// Pins the calling thread to a logical CPU, so the scheduler cannot migrate it
+// and its caches stay warm. Linux uses pthread_setaffinity_np with a one-CPU
+// mask, and Windows uses SetThreadAffinityMask. macOS has no hard affinity
+// API, so the call does nothing there. Returns false on failure or when
+// pinning is not supported.
 bool pin_current_thread(unsigned cpu) noexcept;
 
 } // namespace hpc::support

@@ -6,9 +6,20 @@
 
 namespace hpc::ipc {
 
-// RAII shared mapping of a regular file (open + mmap MAP_SHARED). Unlike
-// shm_region, the file outlives every mapping: data written through it stays
-// in the page cache and reaches disk on writeback or flush().
+// RAII shared mapping of a regular file (open + mmap MAP_SHARED).
+//
+// How it works
+//   - create(path, size): open with O_CREAT | O_TRUNC, ftruncate to `size`
+//     (the file is sparse, so untouched pages take no disk space), then mmap
+//     it MAP_SHARED, read-write. The descriptor is closed right after mapping.
+//   - open(path): open an existing file, read its size with fstat, and map
+//     all of it. An empty file is rejected.
+//   - Writes go to the page cache, so other processes that map the same file
+//     see them at once. Unlike shm_region, the data outlives every mapping and
+//     reaches disk on kernel writeback, or on flush().
+//   - flush(offset, length) rounds the start down to a page boundary and calls
+//     msync(MS_SYNC). That is needed only for durability across power loss or
+//     a kernel crash, not for visibility.
 class mapped_file {
 public:
     // Creates or truncates `path` to `size` bytes (sparse, zero-filled).

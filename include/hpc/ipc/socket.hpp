@@ -9,9 +9,25 @@
 
 namespace hpc::ipc {
 
-// Connected, blocking stream socket (Unix-domain or TCP). Owns the
-// descriptor. Errors throw std::system_error; writing to a peer that has
-// closed throws EPIPE instead of raising SIGPIPE.
+// Connected, blocking stream socket (Unix-domain or TCP) that owns its
+// descriptor. Errors throw std::system_error.
+//
+// How it works
+//   - send_all loops over ::send until every byte is written, retrying on
+//     EINTR and resuming after partial writes. recv_all loops over ::recv
+//     until `size` bytes have arrived. A clean close before the first byte
+//     returns false; a close part-way through throws.
+//   - SIGPIPE is suppressed: per call with MSG_NOSIGNAL on Linux, and per
+//     socket with SO_NOSIGPIPE on macOS. Writing to a closed peer then throws
+//     EPIPE instead of killing the process.
+//   - Framing: send_frame writes a 4-byte little-endian length, encoded byte
+//     by byte so it does not depend on host endianness, followed by the
+//     payload. recv_frame reads the length, resizes the buffer and reads the
+//     payload.
+//   - send_value / recv_value send the raw bytes of a trivially copyable T,
+//     so both ends must share its layout.
+//   - Every send and recv is one system call, plus a wakeup on the receiving
+//     side. Batch small messages when throughput matters.
 class stream_socket {
 public:
     stream_socket() noexcept = default;
@@ -62,7 +78,16 @@ private:
     int fd_{-1};
 };
 
-// Listening socket. A Unix-domain listener removes its path on destruction.
+// Listening socket for Unix-domain paths or IPv4 TCP addresses.
+//
+// How it works
+//   - listen_unix(path) unlinks a stale socket file left by a crashed run,
+//     then calls bind and listen. The destructor unlinks the path again.
+//   - listen_tcp(host, port) sets SO_REUSEADDR, so a restarted server can
+//     rebind at once, then calls bind and listen. getsockname reads back the
+//     real port, so port 0 ("any free port") works.
+//   - accept() blocks, retries on EINTR and ECONNABORTED, applies the SIGPIPE
+//     setting, and returns a stream_socket.
 class stream_listener {
 public:
     // Binds `path`, replacing a stale socket file left by a previous run.

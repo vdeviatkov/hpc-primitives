@@ -7,9 +7,25 @@
 
 namespace hpc::memory {
 
-// Fixed-size block pool. O(1) allocate/deallocate via an intrusive free list
-// threaded through the free blocks, so there is no per-block header. All
-// blocks come from one contiguous slab. Not thread-safe.
+// Fixed-size block pool: O(1) allocate and deallocate, with no per-block
+// header.
+//
+// Data layout: one contiguous slab of block_count blocks. Each block is
+// `stride` bytes, which is block_size rounded up to the alignment and at least
+// one pointer. free_ is the head of a singly linked free list.
+//
+// How it works
+//   - The free list is intrusive: each free block's first bytes hold the
+//     pointer to the next free block, so tracking free blocks costs no extra
+//     memory.
+//   - The constructor links every block in reverse order, so the first
+//     allocations walk the slab forwards, which is good for locality.
+//   - allocate() pops the list head (nullptr when the pool is empty).
+//     deallocate(p) pushes p back. Each is a couple of loads and stores.
+//   - Blocks are rounded up to the requested alignment, so the next-pointer
+//     stored in a free block is always aligned.
+//   - owns(p) is a range check against the slab.
+//   - The slab never grows. Not thread-safe.
 class fixed_pool {
 public:
     // `alignment` must be a power of two. Throws std::bad_alloc.
@@ -70,7 +86,9 @@ private:
     node*       free_{nullptr};
 };
 
-// Typed object pool: construct/destroy T in fixed_pool blocks.
+// Typed object pool: a fixed_pool sized and aligned for T. create() takes a
+// block and placement-news a T into it; destroy() runs ~T and returns the
+// block to the pool.
 template <class T>
 class object_pool {
 public:

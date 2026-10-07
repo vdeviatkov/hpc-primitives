@@ -15,17 +15,33 @@ namespace hpc::concurrency {
 
 // Bounded wait-free single-producer / single-consumer queue.
 //
-//  - Each slot carries a sequence number, as in mpmc_queue but without CAS:
-//    slot.seq == pos means free for the producer at position pos, and
-//    seq == pos + 1 means it holds an element for the consumer. The
-//    producer's release store of seq publishes the element; the consumer's
-//    release store of pos + capacity hands the slot back.
-//  - Neither side ever reads the other side's position counter. A consumer
-//    polling an empty queue (or a producer polling a full one) only touches
-//    the slot it is waiting for. With a shared head/tail index, the polling
-//    side keeps stealing the index cache line from the other thread, which
-//    measured >10x slower at large capacities on Apple M4.
-//  - Positions are 64-bit and never wrap in practice.
+// Data layout
+//   - One heap array of `capacity` slots (rounded up to a power of two, at
+//     least 2). Each slot is { atomic<size_t> seq; raw storage for one T }.
+//   - tail_ (the producer's next position) and head_ (the consumer's next
+//     position), each on its own 128-byte line. Positions only grow; a
+//     position's slot is pos & (capacity - 1).
+//
+// How it works
+//   - Slot i starts with seq = i. For position pos, the slot's seq gives its
+//     state: seq == pos means free, so the producer at pos may write;
+//     seq == pos + 1 means it holds the element for the consumer at pos.
+//   - try_push: read tail_ (only the producer writes it) and check that
+//     slot.seq == pos (otherwise the queue is full). Placement-new T into the
+//     slot, release-store seq = pos + 1, which publishes the element, then set
+//     tail_ = pos + 1.
+//   - front() / pop(): read head_ and acquire-load slot.seq; it must equal
+//     pos + 1 (otherwise empty). front() hands out the element in place
+//     (zero-copy). pop() destroys it, release-stores seq = pos + capacity,
+//     which frees the slot for the producer's next lap, then sets
+//     head_ = pos + 1.
+//   - Neither side reads the other's position counter; the atomics exist only
+//     for size_approx(). The only shared data is the slot being handed over,
+//     so a side polling an empty or full queue spins on that one slot. With a
+//     shared head/tail index, the poller kept stealing the other side's cache
+//     line, which measured >10x slower at large capacities on Apple M4.
+//   - Wait-free: every operation is a fixed number of steps, with no CAS and
+//     no retry loop. The cost is 8 bytes of sequence number per slot.
 template <class T>
 class spsc_queue {
     static_assert(std::is_nothrow_destructible_v<T>);

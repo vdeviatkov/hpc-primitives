@@ -8,8 +8,26 @@
 
 namespace hpc::memory {
 
-// Bump-pointer (monotonic) arena: O(1) allocation, no per-object free, O(1)
-// reset of everything at once. Not thread-safe; use one arena per thread.
+// Bump-pointer (monotonic) arena.
+//
+// Data layout: begin_ (one contiguous block), capacity_, offset_ (bytes used
+// so far) and owning_ (whether the destructor frees the block).
+//
+// How it works
+//   - allocate(bytes, align): round begin_ + offset_ up to `align`, check that
+//     `bytes` fits, and advance offset_. That is a few instructions, with no
+//     locking and no per-allocation header. It returns nullptr when the block
+//     is exhausted; the arena never grows or chains a second block.
+//   - There is no per-object free. reset() sets offset_ = 0 and invalidates
+//     every allocation at once. Destructors of objects in the arena are not
+//     run.
+//   - The block comes either from ::operator new (owning) or from the caller,
+//     for example a stack buffer, huge pages from map_pages(), or numa_arena's
+//     node-bound memory.
+//   - The bounds check is `start > capacity || bytes > capacity - start`,
+//     which cannot overflow.
+//
+// Not thread-safe; use one arena per thread.
 class arena {
 public:
     arena() noexcept = default;
@@ -82,8 +100,12 @@ private:
     bool        owning_{false};
 };
 
-// Standard allocator over an arena, e.g. hpc::memory::arena_allocator<int>
-// for std::vector. deallocate() is a no-op; memory is reclaimed by reset().
+// Standard allocator over an arena, e.g. arena_allocator<int> for
+// std::vector. allocate(n) forwards to arena.allocate(n * sizeof(T),
+// alignof(T)) and throws std::bad_alloc when the arena is exhausted.
+// deallocate() is a no-op; memory comes back on arena.reset(). Copies and
+// rebinds share the same arena, and allocators compare equal when their
+// arenas are the same.
 template <class T>
 class arena_allocator {
 public:
