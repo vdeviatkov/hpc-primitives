@@ -48,10 +48,17 @@ segment. An earlier version skipped that and leaked every segment.
 - `fixed_pool` rounds blocks up to the requested alignment, so the intrusive
   free-list pointer stored in each free block is always aligned. The free
   list is built so the first allocations walk the slab forwards.
-- `map_pages` asks for explicit huge pages (`MAP_HUGETLB`, `MEM_LARGE_PAGES`)
-  and otherwise returns regular pages, with an `MADV_HUGEPAGE` hint on Linux.
-  `page_region::huge` reports which one you got. Mapping is a syscall, so the
-  benefit is fewer TLB misses afterwards, not faster allocation.
+- `map_pages(size, page_kind)` takes a *preferred* page size and falls back
+  rather than failing: `huge_1g` → `huge_2m` → regular pages. Explicit huge
+  pages exist only when an admin has reserved them, so a hard requirement
+  would fail on most machines. `page_region::huge` and `page_size` report
+  what was mapped, so a caller that must not run on small pages can check
+  them at startup. With no huge pages available, Linux falls back to regular
+  pages plus an `MADV_HUGEPAGE` hint. `page_kind::regular` sets
+  `MADV_NOHUGEPAGE` instead, so the reported page size stays true even with
+  THP set to `always`. Mapping is a syscall, so the benefit is fewer TLB
+  misses afterwards, not faster allocation. Usage is in the
+  [README](../README.md#huge-pages).
 - `numa_arena` takes its memory from `numa_alloc_onnode`, which is
   page-aligned and bound with `MPOL_BIND`. That is the only reliable way to
   place an arena on a node: `mbind` on `operator new` memory fails when the

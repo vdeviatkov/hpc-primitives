@@ -23,6 +23,11 @@ jobs:
       - name: Install libnuma
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libnuma-dev
+      # Exercises map_pages' explicit huge-page path here; the sanitizer jobs
+      # keep the pools empty and so cover the fallback path.
+      - name: Reserve 2 MiB huge pages
+        if: runner.os == 'Linux'
+        run: echo 64 | sudo tee /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
       - name: Configure
         shell: bash
         run: >
