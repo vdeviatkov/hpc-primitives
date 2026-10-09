@@ -113,6 +113,6 @@ if (!q.try_emplace(id, price, qty)) { /* full: drop or retry */ }
 // consumer thread
 if (Order* o = q.front()) {  // zero-copy
     handle(*o);
-    q.pop();
+    (void)q.pop();           // returns false only on an empty queue
 }
 ```

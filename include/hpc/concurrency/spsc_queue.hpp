@@ -32,9 +32,10 @@ namespace hpc::concurrency {
 //     tail_ = pos + 1.
 //   - front() / pop(): read head_ and acquire-load slot.seq; it must equal
 //     pos + 1 (otherwise empty). front() hands out the element in place
-//     (zero-copy). pop() destroys it, release-stores seq = pos + capacity,
-//     which frees the slot for the producer's next lap, then sets
-//     head_ = pos + 1.
+//     (zero-copy). pop() makes the same check, so on an empty queue it
+//     returns false and changes nothing; otherwise it destroys the element,
+//     release-stores seq = pos + capacity, which frees the slot for the
+//     producer's next lap, then sets head_ = pos + 1.
 //   - Neither side reads the other's position counter; the atomics exist only
 //     for size_approx(). The only shared data is the slot being handed over,
 //     so a side polling an empty or full queue spins on that one slot. With a
@@ -69,7 +70,7 @@ public:
     ~spsc_queue()
     {
         if constexpr (!std::is_trivially_destructible_v<T>) {
-            while (front() != nullptr) pop();
+            while (front() != nullptr) pop_front_unchecked();
         }
         std::allocator<slot>{}.deallocate(slots_, capacity_);
     }
@@ -114,14 +115,16 @@ public:
         return s.get();
     }
 
-    // Destroys the element returned by front(). Precondition: front() != nullptr.
-    void pop() noexcept
+    // Destroys the oldest element, the one front() returns. Returns false, and
+    // changes nothing, if the queue is empty, so a pop() without a successful
+    // front() cannot corrupt the queue. If front() returned nullptr and
+    // pop() then returns true, an element arrived in between and was dropped
+    // unread: check one of the two results.
+    [[nodiscard]] bool pop() noexcept
     {
-        const std::size_t pos = head_.load(std::memory_order_relaxed);
-        slot& s = at(pos);
-        s.get()->~T();
-        s.seq.store(pos + capacity_, std::memory_order_release);
-        head_.store(pos + 1, std::memory_order_relaxed);
+        if (front() == nullptr) return false;
+        pop_front_unchecked();
+        return true;
     }
 
     [[nodiscard]] bool try_pop(T& out) noexcept(std::is_nothrow_move_assignable_v<T>)
@@ -129,7 +132,7 @@ public:
         T* p = front();
         if (p == nullptr) return false;
         out = std::move(*p);
-        pop();
+        pop_front_unchecked();
         return true;
     }
 
@@ -147,6 +150,16 @@ public:
 
 private:
     slot& at(std::size_t pos) const noexcept { return slots_[pos & (capacity_ - 1)]; }
+
+    // Precondition: front() != nullptr.
+    void pop_front_unchecked() noexcept
+    {
+        const std::size_t pos = head_.load(std::memory_order_relaxed);
+        slot& s = at(pos);
+        s.get()->~T();
+        s.seq.store(pos + capacity_, std::memory_order_release);
+        head_.store(pos + 1, std::memory_order_relaxed);
+    }
 
     const std::size_t capacity_;
     slot* const       slots_;

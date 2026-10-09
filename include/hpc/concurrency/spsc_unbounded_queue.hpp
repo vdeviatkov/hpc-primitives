@@ -30,7 +30,9 @@ namespace hpc::concurrency {
 //     counter only after it has used up every element it already knew about.
 //     When the segment is exhausted (head_pos_ == SegmentSize), acquire-load
 //     `next`. If there is a next segment, delete the old one and continue.
-//   - pop: destroy the element and ++head_pos_, with no shared write.
+//   - pop: run the same check as front(), so on an empty queue it returns
+//     false and changes nothing; otherwise destroy the element and
+//     ++head_pos_, with no shared write.
 //   - Reclamation is trivial. The producer never touches a segment after
 //     linking its successor, and the consumer deletes a segment only after
 //     consuming all of it and seeing `next`, so no hazard pointers or epochs
@@ -60,8 +62,7 @@ public:
 
     ~spsc_unbounded_queue()
     {
-        T* p = nullptr;
-        while ((p = front()) != nullptr) pop();
+        while (front() != nullptr) pop_front_unchecked();
         delete head_seg_;
     }
 
@@ -108,11 +109,16 @@ public:
         return head_seg_->at(head_pos_);
     }
 
-    // Destroys the element returned by front(). Precondition: front() != nullptr.
-    void pop() noexcept
+    // Destroys the oldest element, the one front() returns. Returns false, and
+    // changes nothing, if the queue is empty, so a pop() without a successful
+    // front() cannot corrupt the queue. If front() returned nullptr and
+    // pop() then returns true, an element arrived in between and was dropped
+    // unread: check one of the two results.
+    [[nodiscard]] bool pop() noexcept
     {
-        head_seg_->at(head_pos_)->~T();
-        ++head_pos_;
+        if (front() == nullptr) return false;
+        pop_front_unchecked();
+        return true;
     }
 
     [[nodiscard]] bool try_pop(T& out) noexcept(std::is_nothrow_move_assignable_v<T>)
@@ -120,13 +126,21 @@ public:
         T* p = front();
         if (p == nullptr) return false;
         out = std::move(*p);
-        pop();
+        pop_front_unchecked();
         return true;
     }
 
     static constexpr std::size_t segment_size() noexcept { return SegmentSize; }
 
 private:
+    // Precondition: front() != nullptr, which also moved head_seg_ past any
+    // exhausted segment.
+    void pop_front_unchecked() noexcept
+    {
+        head_seg_->at(head_pos_)->~T();
+        ++head_pos_;
+    }
+
     // Producer-owned.
     alignas(support::cache_line_size) segment* tail_seg_;
     std::size_t tail_pos_{0};

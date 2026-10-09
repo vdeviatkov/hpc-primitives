@@ -3,7 +3,9 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <random>
 #include <string>
 #include <thread>
 
@@ -57,8 +59,104 @@ TEST(SpscQueue, FrontAndPopAreZeroCopy)
     ASSERT_TRUE(q.try_emplace(5u, 'x'));
     ASSERT_NE(q.front(), nullptr);
     EXPECT_EQ(*q.front(), "xxxxx");
-    q.pop();
+    EXPECT_TRUE(q.pop());
     EXPECT_EQ(q.front(), nullptr);
+}
+
+// pop() checks for an element itself, so calling it on an empty queue is a
+// harmless no-op that returns false. Before, an extra pop() marked an unwritten
+// slot as free and the queue then reported full to the producer and empty to
+// the consumer forever.
+TEST(SpscQueue, PopOnEmptyReturnsFalseAndQueueStaysUsable)
+{
+    spsc_queue<int> q(4);
+    EXPECT_FALSE(q.pop());
+    ASSERT_TRUE(q.try_push(10));
+    EXPECT_TRUE(q.pop());
+    EXPECT_FALSE(q.pop());
+    EXPECT_FALSE(q.pop());
+
+    for (int i = 0; i < 4; ++i) EXPECT_TRUE(q.try_push(20 + i)); // full capacity still usable
+    EXPECT_FALSE(q.try_push(99));
+    int v = 0;
+    for (int i = 0; i < 4; ++i) {
+        ASSERT_TRUE(q.try_pop(v));
+        EXPECT_EQ(v, 20 + i);
+    }
+    EXPECT_FALSE(q.try_pop(v));
+}
+
+TEST(SpscQueue, PopWithoutFrontRemovesOldest)
+{
+    spsc_queue<int> q(4);
+    ASSERT_TRUE(q.try_push(1));
+    ASSERT_TRUE(q.try_push(2));
+    EXPECT_TRUE(q.pop());
+    ASSERT_NE(q.front(), nullptr);
+    EXPECT_EQ(*q.front(), 2);
+}
+
+// Non-trivial T: an unchecked pop() would run ~string on raw memory, which
+// ASan reports.
+TEST(SpscQueue, ExtraPopsWithNonTrivialType)
+{
+    spsc_queue<std::string> q(2);
+    ASSERT_TRUE(q.try_push(std::string(100, 'a')));
+    EXPECT_TRUE(q.pop());
+    for (int i = 0; i < 3; ++i) EXPECT_FALSE(q.pop());
+    ASSERT_TRUE(q.try_push(std::string(100, 'b')));
+    std::string s;
+    ASSERT_TRUE(q.try_pop(s));
+    EXPECT_EQ(s, std::string(100, 'b'));
+}
+
+// Random pushes, pops and extra pops, checked against std::deque, through
+// many wrap-arounds of a small ring.
+TEST(SpscQueue, RandomPopsMatchModel)
+{
+    spsc_queue<int> q(8);
+    std::deque<int> model;
+    std::mt19937 rng(42);
+    int next = 0;
+    for (int step = 0; step < 100'000; ++step) {
+        switch (rng() % 3) {
+        case 0:
+            if (q.try_push(next)) model.push_back(next);
+            else EXPECT_EQ(model.size(), q.capacity());
+            ++next;
+            break;
+        case 1: {
+            const bool popped = q.pop();
+            ASSERT_EQ(popped, !model.empty());
+            if (popped) model.pop_front();
+            break;
+        }
+        default:
+            if (model.empty()) {
+                ASSERT_EQ(q.front(), nullptr);
+            } else {
+                ASSERT_NE(q.front(), nullptr);
+                ASSERT_EQ(*q.front(), model.front());
+            }
+        }
+    }
+}
+
+TEST(SpscQueue, DestroysEachElementExactlyOnce)
+{
+    auto tracker = std::make_shared<int>(0);
+    {
+        spsc_queue<std::shared_ptr<int>> q(4);
+        for (int i = 0; i < 3; ++i) ASSERT_TRUE(q.try_push(tracker));
+        EXPECT_TRUE(q.pop());
+        EXPECT_EQ(tracker.use_count(), 3);
+        EXPECT_TRUE(q.pop());
+        EXPECT_TRUE(q.pop());
+        EXPECT_FALSE(q.pop());
+        EXPECT_EQ(tracker.use_count(), 1);
+        ASSERT_TRUE(q.try_push(tracker));
+    }
+    EXPECT_EQ(tracker.use_count(), 1);
 }
 
 TEST(SpscQueue, DestroysRemainingElements)
