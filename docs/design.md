@@ -71,6 +71,19 @@ the point:
 
 - `queue<T>` is one power-of-two ring buffer. `std::queue` defaults to
   `std::deque`, which allocates chunks as the queue moves.
+- `queue<T>` and `fixed_queue<T, N>` track the ring with two free-running
+  counters, `head` (written only by pop) and `tail` (written only by push),
+  and compute `size()` as `tail - head`. An earlier version kept `head` and a
+  `size` count instead. Push and pop then both read-modify-wrote `size`, so
+  whenever the queue lived in memory (a member, or used across a call) each
+  operation waited for a store-to-load forward of the previous one's `size`.
+  Under GCC on a Ryzen 9950X that made steady push + pop 3x slower than
+  libstdc++'s `std::queue`. With separate counters, push and pop form two
+  independent chains, and both queues went 4-11x faster. The read of the
+  other counter in the full and empty checks feeds only a predicted branch,
+  so nothing waits on it. `queue` relies on its power-of-two capacity to stay
+  correct when a counter wraps; `fixed_queue` takes any capacity, so it uses
+  64-bit counters and `pos % N`, which compiles to a mask or a multiply.
 - `fixed_queue<T, N>` and `fixed_stack<T, N>` have inline storage and never
   allocate. Their `try_*` operations report full or empty instead of throwing.
 - `vector<T>` and `queue<T>` construct the new element before relocating on

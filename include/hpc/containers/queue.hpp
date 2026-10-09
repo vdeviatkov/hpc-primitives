@@ -14,23 +14,27 @@ namespace hpc::containers {
 // interface. std::queue sits on std::deque, which allocates and frees chunks
 // as the queue moves forward; this queue never allocates in steady state.
 //
-// Data layout: buf_ (a heap ring whose capacity cap_ is a power of two),
-// head_ (slot of the front element) and size_.
+// Data layout: buf_ (a heap ring whose capacity cap_ is a power of two) and
+// two free-running counters, head_ (position of the front element) and
+// tail_ (one past the back). A position's slot is pos & (cap_ - 1), and
+// size() is tail_ - head_.
 //
 // How it works
-//   - push: construct at buf_[(head_ + size_) & (cap_ - 1)] and ++size_.
-//   - pop: destroy buf_[head_], set head_ = (head_ + 1) & (cap_ - 1), and
-//     --size_.
+//   - push: construct at buf_[tail_ & (cap_ - 1)], then ++tail_.
+//   - pop: destroy buf_[head_ & (cap_ - 1)], then ++head_.
+//   - Push writes only tail_ and pop writes only head_. An earlier version
+//     kept head_ and a size count, so push and pop both read-modify-wrote the
+//     count, and whenever the queue lived in memory each operation waited for
+//     a store-to-load forward of the previous one's count. That made steady
+//     push + pop about 3x slower than libstdc++'s std::queue on Zen 5.
+//   - The counters may wrap around at the top of their range: cap_ is a power
+//     of two, so masking and tail_ - head_ stay correct across the wrap.
 //   - When the ring is full, allocate 2x the capacity (8 to start). Construct
 //     the new element at its final slot first, so q.push(q.front()) is safe.
-//     Then relocate the ring unrolled, [head_, cap_) followed by [0, tail), so
-//     the front lands at slot 0 and head_ resets to 0. Relocation moves
-//     elements, or copies them if T's move can throw (strong guarantee).
-//   - Known cost: push and pop both read-modify-write size_. When the queue
-//     lives in memory rather than registers, each operation waits for a
-//     store-to-load forward of size_ from the previous one. That makes it
-//     about 3x slower than libstdc++'s std::queue on Zen 5. Tracking head and
-//     tail instead would remove that dependency.
+//     Then relocate the ring unrolled, front element first, so the front
+//     lands at slot 0; head_ restarts at 0 and tail_ at size(). Relocation
+//     moves elements, or copies them if T's move can throw (strong
+//     guarantee).
 template <class T>
 class queue {
 public:
@@ -51,15 +55,15 @@ public:
 
     queue(const queue& rhs)
     {
-        reserve(rhs.size_);
-        for (size_type i = 0; i < rhs.size_; ++i) push(rhs[i]);
+        reserve(rhs.size());
+        for (size_type i = 0, n = rhs.size(); i < n; ++i) push(rhs[i]);
     }
 
     queue(queue&& rhs) noexcept
         : buf_(std::exchange(rhs.buf_, nullptr))
         , cap_(std::exchange(rhs.cap_, 0))
         , head_(std::exchange(rhs.head_, 0))
-        , size_(std::exchange(rhs.size_, 0))
+        , tail_(std::exchange(rhs.tail_, 0))
     {}
 
     ~queue()
@@ -93,8 +97,8 @@ public:
 
     // -- Capacity ------------------------------------------------------------
 
-    [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
-    [[nodiscard]] size_type size() const noexcept { return size_; }
+    [[nodiscard]] bool empty() const noexcept { return head_ == tail_; }
+    [[nodiscard]] size_type size() const noexcept { return tail_ - head_; }
     [[nodiscard]] size_type capacity() const noexcept { return cap_; }
 
     void reserve(size_type n)
@@ -104,25 +108,26 @@ public:
 
     void shrink_to_fit()
     {
-        const size_type target = size_ ? std::bit_ceil(size_) : 0;
+        const size_type n = size();
+        const size_type target = n ? std::bit_ceil(n) : 0;
         if (target < cap_) reallocate(target);
     }
 
     // -- Element access (precondition: !empty()) -----------------------------
 
-    reference       front() noexcept { return buf_[head_]; }
-    const_reference front() const noexcept { return buf_[head_]; }
-    reference       back() noexcept { return (*this)[size_ - 1]; }
-    const_reference back() const noexcept { return (*this)[size_ - 1]; }
+    reference       front() noexcept { return buf_[head_ & (cap_ - 1)]; }
+    const_reference front() const noexcept { return buf_[head_ & (cap_ - 1)]; }
+    reference       back() noexcept { return buf_[(tail_ - 1) & (cap_ - 1)]; }
+    const_reference back() const noexcept { return buf_[(tail_ - 1) & (cap_ - 1)]; }
 
     // -- Modifiers -----------------------------------------------------------
 
     template <class... Args>
     reference emplace(Args&&... args)
     {
-        if (size_ == cap_) return emplace_grow(std::forward<Args>(args)...);
-        T* p = std::construct_at(buf_ + index(size_), std::forward<Args>(args)...);
-        ++size_;
+        if (tail_ - head_ == cap_) return emplace_grow(std::forward<Args>(args)...);
+        T* p = std::construct_at(buf_ + (tail_ & (cap_ - 1)), std::forward<Args>(args)...);
+        ++tail_;
         return *p;
     }
 
@@ -132,9 +137,8 @@ public:
     // Precondition: !empty().
     void pop() noexcept
     {
-        std::destroy_at(buf_ + head_);
-        head_ = (head_ + 1) & (cap_ - 1);
-        --size_;
+        std::destroy_at(buf_ + (head_ & (cap_ - 1)));
+        ++head_;
     }
 
     // Moves the front element into `out`, then pops. Precondition: !empty().
@@ -146,8 +150,8 @@ public:
 
     void clear() noexcept
     {
-        while (size_ != 0) pop();
-        head_ = 0;
+        while (head_ != tail_) pop();
+        head_ = tail_ = 0;
     }
 
     void swap(queue& o) noexcept
@@ -155,13 +159,13 @@ public:
         std::swap(buf_, o.buf_);
         std::swap(cap_, o.cap_);
         std::swap(head_, o.head_);
-        std::swap(size_, o.size_);
+        std::swap(tail_, o.tail_);
     }
 
     friend bool operator==(const queue& a, const queue& b)
     {
-        if (a.size_ != b.size_) return false;
-        for (size_type i = 0; i < a.size_; ++i)
+        if (a.size() != b.size()) return false;
+        for (size_type i = 0, n = a.size(); i < n; ++i)
             if (!(a[i] == b[i])) return false;
         return true;
     }
@@ -182,14 +186,16 @@ private:
     // Moves (or copies, if moving could throw) the ring, unrolled, into `dst`.
     void relocate_to(T* dst)
     {
-        const size_type first = std::min(size_, cap_ - head_); // [head_, cap_)
+        const size_type n     = size();
+        const size_type h     = head_ & (cap_ - 1);
+        const size_type first = std::min(n, cap_ - h); // slots [h, cap_)
         if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-            std::uninitialized_move_n(buf_ + head_, first, dst);
-            std::uninitialized_move_n(buf_, size_ - first, dst + first);
+            std::uninitialized_move_n(buf_ + h, first, dst);
+            std::uninitialized_move_n(buf_, n - first, dst + first);
         } else {
-            std::uninitialized_copy_n(buf_ + head_, first, dst);
+            std::uninitialized_copy_n(buf_ + h, first, dst);
             try {
-                std::uninitialized_copy_n(buf_, size_ - first, dst + first);
+                std::uninitialized_copy_n(buf_, n - first, dst + first);
             } catch (...) {
                 std::destroy_n(dst, first);
                 throw;
@@ -199,11 +205,13 @@ private:
 
     void adopt(T* buf, size_type cap) noexcept
     {
-        for (size_type i = 0; i < size_; ++i) std::destroy_at(&(*this)[i]);
+        const size_type n = size();
+        for (size_type i = 0; i < n; ++i) std::destroy_at(&(*this)[i]);
         deallocate(buf_, cap_);
         buf_  = buf;
         cap_  = cap;
         head_ = 0;
+        tail_ = n;
     }
 
     void reallocate(size_type new_cap)
@@ -224,7 +232,7 @@ private:
     {
         const size_type new_cap = cap_ ? cap_ * 2 : 8;
         T* buf = allocate(new_cap);
-        T* p   = buf + size_;
+        T* p   = buf + size();
         try {
             std::construct_at(p, std::forward<Args>(args)...);
         } catch (...) {
@@ -239,14 +247,14 @@ private:
             throw;
         }
         adopt(buf, new_cap);
-        ++size_;
+        ++tail_;
         return *p;
     }
 
     T*        buf_{nullptr};
     size_type cap_{0};
-    size_type head_{0};
-    size_type size_{0};
+    size_type head_{0}; // free-running; written only by pop
+    size_type tail_{0}; // free-running; written only by push
 };
 
 } // namespace hpc::containers

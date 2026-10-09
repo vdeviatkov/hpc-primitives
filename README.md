@@ -33,9 +33,21 @@ Reproduce with `./build/benchmarks/hpc_benchmarks --benchmark_repetitions=3
 | Lock + increment, 4 threads | `std::mutex` vs `ttas_spinlock` | 129 → 32 ns, **4.1×** | 136 → 54 ns, **2.5×** |
 | 64-byte allocations, batch of 1024 | `malloc`/`free` vs `arena` | 84 → 798 M/s, **9.5×** | 94 M/s → 1.41 G/s, **15×** |
 | | vs `fixed_pool` | 84 M/s → 1.10 G/s, **13×** | 94 → 965 M/s, **10×** |
-| Steady-state push + pop | `std::queue` vs `queue` | 188 M/s → 1.67 G/s, **8.9×** | 1.27 G/s → 421 M/s, 0.33× |
-| `push_back` + `pop_front`, 4096 elements | `std::deque` vs `deque` | 201 M/s → 1.07 G/s, **5.3×** | 1.90 → 1.66 G/s, 0.87× |
-| `push_back`, 4096 ints, no reserve | `std::vector` vs `vector` | 2.60 → 2.70 G/s, 1.04× | 3.17 → 3.00 G/s, 0.94× |
+| Steady-state push + pop | `std::queue` vs `queue` | 189 M/s → 1.56 G/s, **8.2×** | 1.29 → 1.38 G/s, 1.07× |
+| | `std::queue` vs `fixed_queue<int, 4096>` | 189 → 812 M/s, **4.3×** | 1.29–1.81 → 2.12–2.13 G/s, **1.17–1.65×** |
+| Push + pop | `std::stack` vs `fixed_stack<int, 4096>` | 272 → 609 M/s, **2.2×** | 1.38–2.33 → 2.57–2.58 G/s, **1.11–1.86×** |
+| `push_back` + `pop_front`, 4096 elements | `std::deque` vs `deque` | 190 M/s → 1.04 G/s, **5.5×** | 1.29–1.95 → 1.29–1.65 G/s, 0.85–1.00× |
+| `push_back`, 4096 ints, no reserve | `std::vector` vs `vector` | 2.60 → 2.69 G/s, 1.04× | 2.96–3.17 → 3.24–3.25 G/s, 1.03–1.09× |
+
+Container rows: both sides reach the container through a pointer and read
+elements the same way (see [`benchmarks/bench_util.hpp`](benchmarks/bench_util.hpp)),
+so the compiler's choices for one container cannot favour it. Even so, these
+loops take about half a nanosecond per operation, and on the Ryzen the same
+source measures up to a third slower or faster from one build to the next
+as the loops land at different code addresses. `std::deque` push_back + pop_front,
+for example, ran at 1.95 G/s in one build and 1.29 G/s in another. The Ryzen
+container cells therefore give the range over two builds, the default one
+and one compiled with `-falign-loops=64`, each the median of 3 processes.
 
 IPC, 64-byte messages between two pinned threads, each with its own mapping
 or socket end ([details](docs/ipc.md#performance)):
@@ -50,16 +62,11 @@ or socket end ([details](docs/ipc.md#performance)):
 
 Where it loses:
 
-- **`queue` and `fixed_queue` steady-state push + pop under GCC.** On the
-  Ryzen, `queue` runs at 421 M/s and `fixed_queue` at 406 M/s, against
-  1.27 G/s for `std::queue`. Both store `head` and `size`, so push and pop
-  both write `size`. When the compiler keeps the members in memory, which
-  GCC does in this benchmark, every operation waits for a store-to-load
-  forward of `size`. In a standalone test, the same ring with `head` and
-  `tail` instead ran 6× faster on the Ryzen and 3.6× faster on the M4 Max.
-- **`deque` against libstdc++.** The 5.3× `push_back` + `pop_front` win is
-  measured against libc++'s `std::deque`. Against libstdc++'s on the Ryzen,
-  `deque` is 0.87× as fast.
+- **`deque` against libstdc++.** The 5.5× `push_back` + `pop_front` win is
+  measured against libc++'s `std::deque`. libstdc++'s `std::deque` uses the
+  same design as this one, and on the Ryzen the two are level within the
+  noise of code layout: 0.85–1.23× across builds and sizes for push_back +
+  pop_front, and 0.76–1.27× for the single-ended operations.
 - **MPMC under heavy symmetric contention on Apple Silicon.** With 4
   producers and 4 consumers busy-polling on the M4 Max, `mpmc_queue` runs at
   5.8 M/s against 37 M/s for a locked `std::queue`. Cross-cluster CAS is
@@ -70,10 +77,10 @@ Where it loses:
 - **`ttas_spinlock` with 8 threads**: 159 ns against 122 ns for `std::mutex`
   on the M4 Max, and 430 ns against 239 ns on the Ryzen. Once 8 threads
   fight over one cache line, the mutex wins by parking waiters.
-- **`deque` random access and iteration on libc++**: 2.5× and 2.0× slower
+- **`deque` random access and iteration on libc++**: 2.2× and 2.0× slower
   than libc++ at 64 Ki elements. Against libstdc++ on the Ryzen, random
   access runs at the same speed and iteration is 1.2× faster.
-- **`vector<std::string>` growth on libc++** is 1.9× slower, because libc++
+- **`vector<std::string>` growth on libc++** is 2.0× slower, because libc++
   marks `std::string` trivially relocatable and moves it with `memcpy`,
   while this library moves element by element. libstdc++ does not, and the
   two are level on the Ryzen (379 µs against 372 µs for 16 Ki strings).

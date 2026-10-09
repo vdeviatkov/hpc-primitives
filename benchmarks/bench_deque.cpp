@@ -1,5 +1,7 @@
 #include <benchmark/benchmark.h>
 
+#include "bench_util.hpp"
+
 #include <hpc/containers/deque.hpp>
 
 #include <cstdint>
@@ -16,7 +18,8 @@ namespace {
 void BM_StdDeque_PushBack_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::deque<int> d;
+    std::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) d.push_back(static_cast<int>(i));
         benchmark::DoNotOptimize(&d);
@@ -30,7 +33,8 @@ void BM_StdDeque_PushBack_Int(benchmark::State& state)
 void BM_HpcDeque_PushBack_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    hpc::containers::deque<int> d;
+    hpc::containers::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) d.push_back(static_cast<int>(i));
         benchmark::DoNotOptimize(&d);
@@ -49,7 +53,8 @@ void BM_HpcDeque_PushBack_Int(benchmark::State& state)
 void BM_StdDeque_PushFront_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::deque<int> d;
+    std::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) d.push_front(static_cast<int>(i));
         benchmark::DoNotOptimize(&d);
@@ -63,7 +68,8 @@ void BM_StdDeque_PushFront_Int(benchmark::State& state)
 void BM_HpcDeque_PushFront_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    hpc::containers::deque<int> d;
+    hpc::containers::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) d.push_front(static_cast<int>(i));
         benchmark::DoNotOptimize(&d);
@@ -81,13 +87,14 @@ void BM_HpcDeque_PushFront_Int(benchmark::State& state)
 void BM_StdDeque_PopBack_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::deque<int> d;
+    std::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         state.PauseTiming();
         d.assign(n, 42);
         state.ResumeTiming();
         while (!d.empty()) {
-            benchmark::DoNotOptimize(d.back());
+            bench::observe(d.back());
             d.pop_back();
         }
     }
@@ -97,13 +104,14 @@ void BM_StdDeque_PopBack_Int(benchmark::State& state)
 void BM_HpcDeque_PopBack_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    hpc::containers::deque<int> d;
+    hpc::containers::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         state.PauseTiming();
         for (std::size_t i = 0; i < n; ++i) d.push_back(42);
         state.ResumeTiming();
         while (!d.empty()) {
-            benchmark::DoNotOptimize(d.back());
+            bench::observe(d.back());
             d.pop_back();
         }
     }
@@ -117,13 +125,14 @@ void BM_HpcDeque_PopBack_Int(benchmark::State& state)
 void BM_StdDeque_PopFront_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::deque<int> d;
+    std::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         state.PauseTiming();
         d.assign(n, 42);
         state.ResumeTiming();
         while (!d.empty()) {
-            benchmark::DoNotOptimize(d.front());
+            bench::observe(d.front());
             d.pop_front();
         }
     }
@@ -133,13 +142,14 @@ void BM_StdDeque_PopFront_Int(benchmark::State& state)
 void BM_HpcDeque_PopFront_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    hpc::containers::deque<int> d;
+    hpc::containers::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         state.PauseTiming();
         for (std::size_t i = 0; i < n; ++i) d.push_back(42);
         state.ResumeTiming();
         while (!d.empty()) {
-            benchmark::DoNotOptimize(d.front());
+            bench::observe(d.front());
             d.pop_front();
         }
     }
@@ -211,11 +221,12 @@ void BM_HpcDeque_Iterate(benchmark::State& state)
 void BM_StdDeque_PushBackPopFront_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::deque<int> d;
+    std::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) {
             d.push_back(static_cast<int>(i));
-            benchmark::DoNotOptimize(d.front());
+            bench::observe(d.front());
             d.pop_front();
         }
     }
@@ -225,11 +236,12 @@ void BM_StdDeque_PushBackPopFront_Int(benchmark::State& state)
 void BM_HpcDeque_PushBackPopFront_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    hpc::containers::deque<int> d;
+    hpc::containers::deque<int> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) {
             d.push_back(static_cast<int>(i));
-            benchmark::DoNotOptimize(d.front());
+            bench::observe(d.front());
             d.pop_front();
         }
     }
@@ -243,7 +255,8 @@ void BM_HpcDeque_PushBackPopFront_Int(benchmark::State& state)
 void BM_StdDeque_PushBack_String(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::deque<std::string> d;
+    std::deque<std::string> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) d.push_back("benchmark_string");
         benchmark::DoNotOptimize(&d);
@@ -257,7 +270,8 @@ void BM_StdDeque_PushBack_String(benchmark::State& state)
 void BM_HpcDeque_PushBack_String(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    hpc::containers::deque<std::string> d;
+    hpc::containers::deque<std::string> d_storage;
+    auto& d = bench::opaque(d_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) d.push_back("benchmark_string");
         benchmark::DoNotOptimize(&d);

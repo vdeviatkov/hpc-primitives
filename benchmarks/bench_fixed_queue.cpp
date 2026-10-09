@@ -1,5 +1,7 @@
 #include <benchmark/benchmark.h>
 
+#include "bench_util.hpp"
+
 #include <hpc/containers/fixed_queue.hpp>
 
 #include <cstdint>
@@ -15,7 +17,8 @@ namespace {
 void BM_FixedQueueBaseline_StdQueue_Push_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::queue<int> q;
+    std::queue<int> q_storage;
+    auto& q = bench::opaque(q_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) q.push(static_cast<int>(i));
         benchmark::DoNotOptimize(&q);
@@ -29,7 +32,8 @@ void BM_FixedQueueBaseline_StdQueue_Push_Int(benchmark::State& state)
 template <std::size_t Cap>
 void BM_HpcFixedQueue_Push_Int(benchmark::State& state)
 {
-    hpc::containers::fixed_queue<int, Cap> q;
+    hpc::containers::fixed_queue<int, Cap> q_storage;
+    auto& q = bench::opaque(q_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < Cap; ++i) (void)q.try_push(static_cast<int>(i));
         benchmark::DoNotOptimize(&q);
@@ -47,13 +51,14 @@ void BM_HpcFixedQueue_Push_Int(benchmark::State& state)
 void BM_FixedQueueBaseline_StdQueue_Pop_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::queue<int> q;
+    std::queue<int> q_storage;
+    auto& q = bench::opaque(q_storage);
     for (auto _ : state) {
         state.PauseTiming();
         for (std::size_t i = 0; i < n; ++i) q.push(static_cast<int>(i));
         state.ResumeTiming();
         while (!q.empty()) {
-            benchmark::DoNotOptimize(q.front());
+            bench::observe(q.front());
             q.pop();
         }
     }
@@ -63,13 +68,14 @@ void BM_FixedQueueBaseline_StdQueue_Pop_Int(benchmark::State& state)
 template <std::size_t Cap>
 void BM_HpcFixedQueue_Pop_Int(benchmark::State& state)
 {
-    hpc::containers::fixed_queue<int, Cap> q;
+    hpc::containers::fixed_queue<int, Cap> q_storage;
+    auto& q = bench::opaque(q_storage);
     for (auto _ : state) {
         state.PauseTiming();
         for (std::size_t i = 0; i < Cap; ++i) (void)q.try_push(static_cast<int>(i));
         state.ResumeTiming();
         while (!q.empty()) {
-            benchmark::DoNotOptimize(q.front());
+            bench::observe(q.front());
             (void)q.try_pop();
         }
     }
@@ -83,11 +89,12 @@ void BM_HpcFixedQueue_Pop_Int(benchmark::State& state)
 void BM_FixedQueueBaseline_StdQueue_PushPop_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::queue<int> q;
+    std::queue<int> q_storage;
+    auto& q = bench::opaque(q_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) {
             q.push(static_cast<int>(i));
-            benchmark::DoNotOptimize(q.front());
+            bench::observe(q.front());
             q.pop();
         }
     }
@@ -97,11 +104,16 @@ void BM_FixedQueueBaseline_StdQueue_PushPop_Int(benchmark::State& state)
 void BM_HpcFixedQueue_PushPop_Int(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    hpc::containers::fixed_queue<int, 1> q;
+    // Capacity 4096, like the push-only and pop-only benchmarks. With capacity
+    // 1 GCC specializes the index math for the single slot, and on a Ryzen
+    // 9950X that version ran at 0.71 ns per push + pop against 0.39 ns for any
+    // larger capacity doing the same work.
+    hpc::containers::fixed_queue<int, 4096> q_storage;
+    auto& q = bench::opaque(q_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) {
             (void)q.try_push(static_cast<int>(i));
-            benchmark::DoNotOptimize(q.front());
+            bench::observe(q.front());
             (void)q.try_pop();
         }
     }
@@ -115,7 +127,8 @@ void BM_HpcFixedQueue_PushPop_Int(benchmark::State& state)
 void BM_FixedQueueBaseline_StdQueue_Push_String(benchmark::State& state)
 {
     const auto n = static_cast<std::size_t>(state.range(0));
-    std::queue<std::string> q;
+    std::queue<std::string> q_storage;
+    auto& q = bench::opaque(q_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < n; ++i) q.push("benchmark_string");
         benchmark::DoNotOptimize(&q);
@@ -129,7 +142,8 @@ void BM_FixedQueueBaseline_StdQueue_Push_String(benchmark::State& state)
 template <std::size_t Cap>
 void BM_HpcFixedQueue_Push_String(benchmark::State& state)
 {
-    hpc::containers::fixed_queue<std::string, Cap> q;
+    hpc::containers::fixed_queue<std::string, Cap> q_storage;
+    auto& q = bench::opaque(q_storage);
     for (auto _ : state) {
         for (std::size_t i = 0; i < Cap; ++i) (void)q.try_push(std::string("benchmark_string"));
         benchmark::DoNotOptimize(&q);

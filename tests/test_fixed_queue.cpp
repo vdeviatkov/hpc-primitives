@@ -2,7 +2,9 @@
 #include <hpc/containers/fixed_queue.hpp>
 
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <random>
 #include <string>
 #include <utility>
 
@@ -336,3 +338,82 @@ TEST(HpcFixedQueue, ConstAccess)
     EXPECT_FALSE(cq.full());
 }
 
+
+// head_ and tail_ are free-running and the slot is pos % Capacity, so check
+// non-power-of-two capacities against std::deque through many wrap-arounds,
+// including back(), copies, swap and equality while wrapped.
+template <std::size_t Cap>
+void check_against_model(unsigned seed)
+{
+    hpc::containers::fixed_queue<int, Cap> q;
+    std::deque<int> model;
+    std::mt19937 rng(seed);
+    int next = 0;
+    for (int step = 0; step < 20'000; ++step) {
+        switch (rng() % 6) {
+        case 0:
+        case 1: {
+            const bool ok = q.try_push(next);
+            ASSERT_EQ(ok, model.size() < Cap);
+            if (ok) model.push_back(next);
+            ++next;
+            break;
+        }
+        case 2:
+        case 3: {
+            int v = -1;
+            const bool ok = q.try_pop(v);
+            ASSERT_EQ(ok, !model.empty());
+            if (ok) {
+                ASSERT_EQ(v, model.front());
+                model.pop_front();
+            }
+            break;
+        }
+        case 4: {
+            auto copy = q;
+            ASSERT_TRUE(copy == q);
+            hpc::containers::fixed_queue<int, Cap> other;
+            other.swap(copy);
+            ASSERT_TRUE(other == q);
+            ASSERT_TRUE(copy.empty());
+            break;
+        }
+        default:
+            break;
+        }
+        ASSERT_EQ(q.size(), model.size());
+        ASSERT_EQ(q.empty(), model.empty());
+        ASSERT_EQ(q.full(), model.size() == Cap);
+        if (!model.empty()) {
+            ASSERT_EQ(q.front(), model.front());
+            ASSERT_EQ(q.back(), model.back());
+        }
+    }
+}
+
+TEST(HpcFixedQueue, MatchesModelAtAnyCapacity)
+{
+    check_against_model<1>(1);
+    check_against_model<3>(2);
+    check_against_model<5>(3);
+    check_against_model<7>(4);
+    check_against_model<8>(5);
+}
+
+TEST(HpcFixedQueue, ClearResetsAfterWrap)
+{
+    hpc::containers::fixed_queue<int, 3> q;
+    for (int i = 0; i < 10; ++i) {
+        ASSERT_TRUE(q.try_push(i));
+        int v = 0;
+        ASSERT_TRUE(q.try_pop(v));
+    }
+    ASSERT_TRUE(q.try_push(1));
+    q.clear();
+    EXPECT_TRUE(q.empty());
+    for (int i = 0; i < 3; ++i) EXPECT_TRUE(q.try_push(i));
+    EXPECT_FALSE(q.try_push(9));
+    EXPECT_EQ(q.front(), 0);
+    EXPECT_EQ(q.back(), 2);
+}

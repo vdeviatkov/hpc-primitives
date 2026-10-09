@@ -2,7 +2,9 @@
 #include <hpc/containers/queue.hpp>
 
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <random>
 #include <string>
 #include <utility>
 
@@ -388,4 +390,59 @@ TEST(HpcDynamicQueue, SelfReferencingPushSurvivesGrowth)
     while (q.size() < q.capacity()) q.push("x");
     q.push(q.front());
     EXPECT_EQ(q.back(), "first");
+}
+
+// head_ and tail_ are free-running counters, so check every operation against
+// std::deque through growth, wrap-around, copies, swap and shrink_to_fit.
+TEST(HpcDynamicQueue, MatchesModel)
+{
+    hpc::containers::queue<int> q;
+    std::deque<int> model;
+    std::mt19937 rng(11);
+    int next = 0;
+    for (int step = 0; step < 50'000; ++step) {
+        switch (rng() % 8) {
+        case 0:
+        case 1:
+        case 2:
+            q.push(next);
+            model.push_back(next++);
+            break;
+        case 3:
+        case 4:
+            if (!model.empty()) {
+                int v = -1;
+                q.pop(v);
+                ASSERT_EQ(v, model.front());
+                model.pop_front();
+            }
+            break;
+        case 5: {
+            auto copy = q;
+            ASSERT_TRUE(copy == q);
+            hpc::containers::queue<int> other;
+            other.swap(copy);
+            ASSERT_TRUE(other == q);
+            break;
+        }
+        case 6:
+            if (rng() % 16 == 0) {
+                q.shrink_to_fit();
+                ASSERT_GE(q.capacity(), q.size());
+            }
+            break;
+        default:
+            if (rng() % 64 == 0) {
+                q.clear();
+                model.clear();
+            }
+            break;
+        }
+        ASSERT_EQ(q.size(), model.size());
+        ASSERT_EQ(q.empty(), model.empty());
+        if (!model.empty()) {
+            ASSERT_EQ(q.front(), model.front());
+            ASSERT_EQ(q.back(), model.back());
+        }
+    }
 }
