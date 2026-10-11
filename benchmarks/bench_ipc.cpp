@@ -1,6 +1,6 @@
-// IPC transports, measured between two pinned threads. Each side opens its own
-// mapping or socket end, exactly as a separate process would; the kernel and
-// cache-coherency paths are the same as across processes.
+// IPC transports between two threads, with separate mappings/socket ends.
+// Affinity is requested but may fail; macOS does not support hard pinning.
+// This is not a measurement of separate-process performance.
 //
 //  - Throughput: 64-byte messages, producer -> consumer, items/s.
 //  - PingPong:   one 64-byte message there and back; `rtt` is seconds per
@@ -190,7 +190,7 @@ void BM_Ipc_Throughput_FileJournal(benchmark::State& state)
     set_throughput(state, kMessages);
 }
 
-// One send() / recv() system call per message.
+// One send_all() / recv_all() call per message; partial transfers may retry.
 void socket_throughput(benchmark::State& state, hpc::ipc::stream_socket& tx,
                        hpc::ipc::stream_socket& rx)
 {

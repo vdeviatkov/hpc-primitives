@@ -44,6 +44,37 @@ private:
     std::queue<T> q_;
 };
 
+// Capacity-matched baseline: preallocated ring, no steady-state allocation.
+// Like the bounded hpc queues, a full queue makes the producer retry.
+template <class T>
+class locked_ring {
+public:
+    explicit locked_ring(std::size_t capacity) : slots_(capacity) {}
+    bool try_push(const T& v)
+    {
+        std::lock_guard lock(m_);
+        if (size_ == slots_.size()) return false;
+        slots_[tail_] = v;
+        tail_ = (tail_ + 1) % slots_.size();
+        ++size_;
+        return true;
+    }
+    bool try_pop(T& out)
+    {
+        std::lock_guard lock(m_);
+        if (size_ == 0) return false;
+        out = slots_[head_];
+        head_ = (head_ + 1) % slots_.size();
+        --size_;
+        return true;
+    }
+
+private:
+    std::mutex m_;
+    std::vector<T> slots_;
+    std::size_t head_ = 0, tail_ = 0, size_ = 0;
+};
+
 // Adapts the unbounded queue's infallible push to the try_push interface.
 template <class T>
 struct unbounded_adapter : hpc::concurrency::spsc_unbounded_queue<T> {
@@ -100,6 +131,7 @@ void run(benchmark::State& state, unsigned producers, unsigned consumers)
 using u64 = std::uint64_t;
 
 void BM_Spsc_LockedStdQueue(benchmark::State& s) { run<locked_queue<u64>>(s, 1, 1); }
+void BM_Spsc_LockedRing(benchmark::State& s) { run<locked_ring<u64>>(s, 1, 1); }
 void BM_Spsc_SpscQueue(benchmark::State& s) { run<hpc::concurrency::spsc_queue<u64>>(s, 1, 1); }
 void BM_Spsc_SpscUnboundedQueue(benchmark::State& s) { run<unbounded_adapter<u64>>(s, 1, 1); }
 void BM_Spsc_MpmcQueue(benchmark::State& s) { run<hpc::concurrency::mpmc_queue<u64>>(s, 1, 1); }
@@ -116,13 +148,21 @@ void BM_Mpmc_MpmcQueue(benchmark::State& s)
     run<hpc::concurrency::mpmc_queue<u64>>(s, n, n);
 }
 
+void BM_Mpmc_LockedRing(benchmark::State& s)
+{
+    const auto n = static_cast<unsigned>(s.range(0));
+    run<locked_ring<u64>>(s, n, n);
+}
+
 } // namespace
 
 BENCHMARK(BM_Spsc_LockedStdQueue)->UseRealTime()->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_Spsc_LockedRing)->UseRealTime()->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_Spsc_SpscQueue)->UseRealTime()->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_Spsc_SpscUnboundedQueue)->UseRealTime()->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_Spsc_MpmcQueue)->UseRealTime()->Unit(benchmark::kMillisecond);
 
 // Arg = producers = consumers.
 BENCHMARK(BM_Mpmc_LockedStdQueue)->Arg(2)->Arg(4)->UseRealTime()->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_Mpmc_LockedRing)->Arg(2)->Arg(4)->UseRealTime()->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_Mpmc_MpmcQueue)->Arg(2)->Arg(4)->UseRealTime()->Unit(benchmark::kMillisecond);

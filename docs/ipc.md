@@ -3,11 +3,11 @@
 `hpc/ipc` has three families of transport. All of them are POSIX-only
 (Linux, macOS) and are left out of Windows builds.
 
-| Transport | Header | Shape | Survives process exit | Typical round trip |
+| Transport | Header | Shape | Survives process exit | Measured mean round trip¹ |
 |---|---|---|---|---|
 | `shm_spsc_queue<T>` | `hpc/ipc/shm_spsc_queue.hpp` | 1 producer → 1 consumer, bounded ring | no (creator unlinks) | ~0.1 µs |
 | `shm_mpmc_queue<T>` | `hpc/ipc/shm_mpmc_queue.hpp` | N producers → M consumers, bounded ring | no (creator unlinks) | ~0.1 µs |
-| `file_journal<T>` | `hpc/ipc/file_journal.hpp` | 1 writer → any number of readers, append-only log | yes, it is a file | memory speed |
+| `file_journal<T>` | `hpc/ipc/file_journal.hpp` | 1 writer → any number of readers, append-only log | yes, it is a file | unmeasured |
 | `stream_socket` | `hpc/ipc/socket.hpp` | byte stream / framed messages, Unix-domain or TCP | no | 2.5–5 µs (Unix), 3.6–14 µs (TCP) |
 
 Pick one:
@@ -21,7 +21,9 @@ Pick one:
 - **Variable-size messages, blocking reads, another machine, or a peer in
   another language without shared memory**: sockets.
 
-Measured numbers are under [Performance](#performance).
+¹ Two-thread, 64-byte closed-loop measurements; not cross-process or tail
+latency guarantees. Measured numbers are under [Performance](#performance).
+See also the [methodology audit](benchmarking.md).
 
 ## Shared-memory queues
 
@@ -244,42 +246,49 @@ They also run under ThreadSanitizer and ASan/UBSan
 ```
 
 - `BM_Ipc_Throughput_*` sends 2¹⁸ 64-byte messages from a producer to a
-  consumer and reports `items_per_second`. The sockets make one `send` and
-  one `recv` system call per message, without batching.
+  consumer and reports `items_per_second`. The sockets make one `send_all` and
+  one `recv_all` call per message, without batching. These helpers can
+  issue multiple system calls on partial transfers.
   `ShmMpmc/N` runs N producers and N consumers.
 - `BM_Ipc_PingPong_*` bounces one 64-byte message back and forth. `rtt` is
-  the time per round trip.
+  total timed wall time divided by the number of round trips, including
+  thread startup and joins. It is a batch mean, not a percentile.
 
-The two sides are threads pinned to CPUs 0 and 1 (pinning is a no-op on
-macOS). Each side opens the queue, file or socket itself, so the hardware
-and kernel paths are the same as between two processes.
+The two sides are threads requesting CPUs 0 and 1 (pinning is a no-op on
+macOS; affinity failures are ignored by the historical harness). Shared-memory
+and file endpoints use distinct mappings; sockets use distinct endpoints.
+This exercises the transports, but does not measure separate-process scheduling,
+address-space, or TLB effects. Cross-process tests establish functionality,
+not performance equivalence.
 
 ## Performance
 
-Median of 3 runs, `-O3 -march=native`, 64-byte messages. Machines as in the
-[README](../README.md#performance): Apple M4 Max (Apple Clang 17, macOS) and
-AMD Ryzen 9 9950X (GCC 13.3, Ubuntu 24.04, kernel 7.0).
+M4 Max results refreshed on 2026-10-10: median of three fresh processes,
+`-O3 -march=native`, 64-byte messages, macOS 26.3.1 (a), Apple Clang 17.
+[Raw records and observed ranges](../benchmarks/results/apple-m4-max-2026-10-10/README.md)
+are archived. Ryzen results remain historical (GCC 13.3, Ubuntu 24.04,
+kernel 7.0). Machines and timing caveats are in the [README](../README.md#performance).
 
 **Throughput**, producer → consumer:
 
 | Transport | M4 Max | Ryzen 9950X |
 |---|---|---|
-| `shm_spsc_queue` | 112 M/s (6.7 GiB/s) | 106 M/s (6.3 GiB/s) |
-| `shm_mpmc_queue`, 1 producer / 1 consumer | 51 M/s | 79 M/s |
-| `shm_mpmc_queue`, 2 / 2 | 17 M/s | 27 M/s |
-| `shm_mpmc_queue`, 4 / 4 | 6.5 M/s | 16 M/s |
-| `file_journal` (fresh file each run) | 16 M/s | 45 M/s |
-| Unix-domain socket, one syscall per message | 1.7 M/s | 4.2 M/s |
-| TCP loopback, one syscall per message | 1.9 M/s | 6.2 M/s |
+| `shm_spsc_queue` | 99.3 M/s (5.9 GiB/s) | 106 M/s (6.3 GiB/s) |
+| `shm_mpmc_queue`, 1 producer / 1 consumer | 49.1 M/s | 79 M/s |
+| `shm_mpmc_queue`, 2 / 2 | 15.7 M/s | 27 M/s |
+| `shm_mpmc_queue`, 4 / 4 | 6.28 M/s | 16 M/s |
+| `file_journal` (fresh file each run) | 9.63 M/s | 45 M/s |
+| Unix-domain socket, unbatched 64-byte messages | 1.58 M/s | 4.2 M/s |
+| TCP loopback, unbatched 64-byte messages | 1.78 M/s | 6.2 M/s |
 
-**Round trip**, one message there and back:
+**Mean round trip**, one message there and back (no p99/p99.9 measurements):
 
 | Transport | M4 Max | Ryzen 9950X |
 |---|---|---|
-| `shm_spsc_queue` | 116 ns | 97 ns |
-| `shm_mpmc_queue` | 125 ns | 114 ns |
-| Unix-domain socket | 4.7 µs | 2.5 µs |
-| TCP loopback, `TCP_NODELAY` | 14.1 µs | 3.6 µs |
+| `shm_spsc_queue` | 119 ns | 97 ns |
+| `shm_mpmc_queue` | 140 ns | 114 ns |
+| Unix-domain socket | 4.74 µs | 2.5 µs |
+| TCP loopback, `TCP_NODELAY` | 13.9 µs | 3.6 µs |
 
 **Bandwidth vs message size** (Ryzen 9950X, glibc 2.39). The tables above
 use 64-byte messages, so they count messages, not bytes. Larger messages
@@ -395,15 +404,16 @@ What the numbers say:
 
 How to read these numbers:
 
-- Shared memory is 25–120× faster than a socket on the same machine, since
-  a round trip is two cache-line transfers rather than four system calls and
-  two wakeups. In exchange, the receiver burns a core polling.
+- Shared-memory mean RTT is 25–120× lower than socket RTT in these
+  closed-loop tests. Shared-memory handoff avoids socket system calls and
+  blocking wakeups; the benchmark does not count cache-line transfers.
+  In exchange, the receiver burns a core polling.
 - `file_journal` throughput mostly pays for first-touch page faults on
   pages the file has not used yet. Readers see records through the page
-  cache, so its latency should be close to shared memory's, but it has no
-  round-trip benchmark yet.
-- Socket throughput here is bound by one system call per 64-byte message.
+  cache; journal latency is unmeasured here.
+- Socket throughput here uses unbatched 64-byte messages.
   Sending several messages per `send_all` spreads that cost (not
   benchmarked here).
 - `shm_spsc_queue` caches the other side's index per handle. Before that
-  change, throughput on the M4 Max was 20 M/s and the round trip 192 ns.
+  change, throughput on the M4 Max was 20 M/s and the round trip 192 ns (historical
+  before/after experiment, not reproducible with the current harness).

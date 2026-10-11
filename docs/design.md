@@ -9,28 +9,35 @@ headers.
 |---|---|---|---|
 | `spsc_queue<T>` | 1 / 1 | yes | wait-free |
 | `spsc_unbounded_queue<T>` | 1 / 1 | no (segments) | wait-free pop; push allocates once per segment |
-| `mpmc_queue<T>` | N / M | yes | lock-free |
+| `mpmc_queue<T>` | N / M | yes | CAS-based, not wait-free; unpublished head blocks delivery |
 
 **Per-slot sequence numbers, even for SPSC.** The textbook SPSC ring (shared
 `head`/`tail`, optionally with cached copies) collapses when one side polls:
 a consumer spinning on an empty queue keeps pulling the `tail` cache line
 away from the producer, which slows the producer, which keeps the queue empty.
-On an Apple M4 Max that feedback loop held a 64 Ki-slot ring at about 14 M items/s
+In a historical capacity-sweep experiment (not reproduced by the current
+4096-slot harness), an Apple M4 Max feedback loop held a 64 Ki-slot ring at about 14 M items/s
 (the consumer failed ~80 polls per item) against about 250 M/s at 256 slots.
 With a sequence number in each slot, each side polls only the slot it is
-waiting for and never reads the other side's counter. Throughput becomes
-insensitive to capacity (167–470 M/s across 256–64 Ki slots). The cost is
+waiting for and never reads the other side's counter. That experiment measured
+167–470 M/s across 256–64 Ki slots with per-slot sequences; it does not
+establish capacity independence on every workload. The cost is
 8 bytes per slot.
 
 **`mpmc_queue` is Vyukov's bounded queue.** A CAS on `head`/`tail` reserves
 a position; the release store to the slot's sequence publishes the data.
 Positions are 64-bit, so there is no ABA. It is not linearizable as a whole:
 `try_pop` can report empty while a producer that claimed an earlier position
-is still writing.
+is still writing. A producer paused between reservation and publication
+prevents consumers from reaching later published items. CAS retries mean
+operations are not wait-free; using atomics without a mutex does not make
+this queue lock-free. See
+[Vyukov’s algorithm description](https://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue).
 
 Under heavy symmetric contention (4 producers + 4 consumers busy-polling)
 on Apple Silicon, this queue is slower than `std::mutex` + `std::queue`,
-because cross-cluster CAS is expensive and the mutex parks waiters. Neither
+with cross-cluster CAS cost and mutex parking as plausible explanations
+(the benchmark does not isolate their contributions). Neither
 padding slots onto separate cache lines nor CAS backoff changed that. Use
 it when threads do real work between operations, or when you need bounded
 memory and no syscalls. Do not use it for an 8-thread ping-pong on Apple
@@ -126,8 +133,9 @@ on an M4 Max was 20 M/s instead of 110 M/s.
 
 `shm_mpmc_queue<T>` is the cross-process version of `mpmc_queue`: the same
 sequence-per-slot algorithm, with 64-bit positions and a fixed layout. It is
-lock-free but not crash-safe: a process that dies between its CAS and its
-publishing store leaves a slot that never becomes ready.
+CAS-based and not wait-free. A process paused between its reservation CAS
+and publishing store blocks delivery at that slot; if it dies there, the
+queue cannot recover without recreation.
 
 `file_journal<T>` gives up bounded memory in exchange for history. Nothing is
 overwritten, so the writer never waits for readers, and readers need no

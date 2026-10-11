@@ -44,7 +44,10 @@ static_assert(offsetof(shm_mpmc_header, tail) == 128);
 static_assert(offsetof(shm_mpmc_header, head) == 256);
 static_assert(sizeof(shm_mpmc_header) == 384);
 
-// Bounded lock-free multi-producer / multi-consumer queue between processes.
+// Bounded mutex-free multi-producer / multi-consumer queue between processes.
+// Operations are not wait-free. A producer paused after reservation can
+// prevent delivery of later items until it publishes its slot; try_pop returns
+// false at that hole, even though the underlying atomics are lock-free.
 // T must be trivially copyable and contain no pointers, and all sides must
 // agree on its layout.
 //

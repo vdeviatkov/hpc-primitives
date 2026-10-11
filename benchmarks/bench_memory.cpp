@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <new>
 
 namespace {
 
@@ -38,6 +39,20 @@ void BM_Arena(benchmark::State& state)
     state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(kBatch));
 }
 
+// Matches the 64-byte alignment requested from arena and fixed_pool.
+void BM_AlignedNew(benchmark::State& state)
+{
+    std::array<void*, kBatch> ptrs{};
+    for (auto _ : state) {
+        for (auto& p : ptrs)
+            benchmark::DoNotOptimize(p = ::operator new(sizeof(object),
+                                                       std::align_val_t{alignof(object)}));
+        for (void* p : ptrs)
+            ::operator delete(p, std::align_val_t{alignof(object)});
+    }
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(kBatch));
+}
+
 void BM_FixedPool(benchmark::State& state)
 {
     hpc::memory::fixed_pool pool(sizeof(object), kBatch, alignof(object));
@@ -52,5 +67,6 @@ void BM_FixedPool(benchmark::State& state)
 } // namespace
 
 BENCHMARK(BM_Malloc);
+BENCHMARK(BM_AlignedNew);
 BENCHMARK(BM_Arena);
 BENCHMARK(BM_FixedPool);

@@ -5,6 +5,9 @@
 CMakeUserPresets.json
 compile_commands.json
 
+# Generated benchmark results
+/benchmarks/results/
+
 # IDEs / editors
 .idea/
 .vscode/

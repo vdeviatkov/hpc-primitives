@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <latch>
 #include <memory>
 #include <string>
 #include <thread>
@@ -51,6 +52,44 @@ TEST(MpmcQueue, EmplaceNonTrivial)
     std::string s;
     ASSERT_TRUE(q.try_pop(s));
     EXPECT_EQ(s, "aaa");
+}
+
+// Pause construction after the enqueue CAS, before the slot's release store.
+// A later enqueue completes, but consumers cannot pass the unpublished head.
+TEST(MpmcQueue, UnpublishedHeadPreventsDeliveryOfPublishedSuccessor)
+{
+    struct value {
+        int number = 0;
+        value() = default;
+        explicit value(int n, std::latch* reserved = nullptr,
+                       std::latch* publish = nullptr) noexcept : number(n)
+        {
+            if (reserved != nullptr) {
+                reserved->count_down();
+                publish->wait();
+            }
+        }
+    };
+
+    mpmc_queue<value> q(2);
+    std::latch reserved(1), publish(1);
+    bool first_pushed = false;
+    std::thread producer([&] { first_pushed = q.try_emplace(1, &reserved, &publish); });
+    reserved.wait();
+
+    EXPECT_TRUE(q.try_emplace(2));
+    value out;
+    EXPECT_FALSE(q.try_pop(out));
+    EXPECT_FALSE(q.try_emplace(3));
+
+    publish.count_down();
+    producer.join();
+    EXPECT_TRUE(first_pushed);
+    ASSERT_TRUE(q.try_pop(out));
+    EXPECT_EQ(out.number, 1);
+    ASSERT_TRUE(q.try_pop(out));
+    EXPECT_EQ(out.number, 2);
+    EXPECT_FALSE(q.try_pop(out));
 }
 
 TEST(MpmcQueue, DestroysRemainingElements)

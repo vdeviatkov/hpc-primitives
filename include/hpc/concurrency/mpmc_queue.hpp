@@ -13,7 +13,7 @@
 
 namespace hpc::concurrency {
 
-// Bounded lock-free multi-producer / multi-consumer queue (Dmitry Vyukov's
+// Bounded mutex-free multi-producer / multi-consumer queue (Dmitry Vyukov's
 // sequence-slot design).
 //
 // Data layout
@@ -38,7 +38,9 @@ namespace hpc::concurrency {
 //   - The CAS only reserves a position. The release store to seq is what hands
 //     the data over, and it pairs with the acquire load on the other side.
 //   - Positions are 64-bit and never wrap in practice, so there is no ABA.
-//   - Lock-free but not wait-free: under contention a CAS can lose and retry.
+//   - CAS retries make operations not wait-free. No mutex is used, but a
+//     producer paused after reservation can prevent delivery of later items
+//     until it publishes its slot; try_pop returns false at that hole.
 //   - Not linearizable as a whole: try_pop can report empty while a producer
 //     that claimed an earlier position is still writing its element.
 template <class T>
